@@ -1,0 +1,93 @@
+# ==============================================================================
+# TritForge — Git Ignore Policy
+# Protects private SDCS framework governance, model weights, and local telemetry
+# ==============================================================================
+
+# Python bytecode & virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.cache/
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# IDE & OS Artifacts
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Secrets & Environment variables
+.env
+.env.*
+*.key
+*.pem
+*.token
+*credentials*
+
+# Large Model Weights, Temp Payload Streams & Datasets (Strictly Local)
+*.trit
+*.payload.tmp
+*.tmp
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.onnx
+*.ckpt
+models/
+data/
+checkpoints/
+conversion_manifest.json
+metrics.json
+
+# Local conversion daemons & scratch files
+convert_overnight.py
+reconvert_pilot.py
+scratch/
+*.log
+
+# ==============================================================================
+# SDCS Private Framework & Governance (Internal / Protected)
+# ==============================================================================
+.sdcs/
+sessions/
+AGENTS.md
+spine.md
+wiring.yaml
+roadmap.md
+state.md
+app_map.md
+decisions.md
+evals.md
+mocks.md

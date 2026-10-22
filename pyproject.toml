@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tritforge"
+version = "0.1.0"
+description = "Clean-room 1.58-bit PTQ & Inference Engine for Sparse MoE"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+dependencies = [
+    "numpy>=1.24.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+]
+accel = [
+    "torch>=2.0.0",
+    "safetensors>=0.4.0",
+]
+
+[project.scripts]
+tritforge = "tritforge.cli:main"
+tritforge-benchmark = "tritforge.benchmark:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["tritforge*"]
