@@ -62,3 +62,17 @@ def test_meta_all_vault_referencing_tests_marked():
         f"Found tests referencing vault paths without @pytest.mark.vault marker:\n"
         + "\n".join(f"  - {v}" for v in violations)
     )
+
+
+def test_meta_pyproject_toml_deselects_vault_by_default():
+    """Part F (d): Meta-test that fails if pyproject.toml's addopts no longer deselects vault tests."""
+    pyproject_path = Path(__file__).resolve().parent.parent / "pyproject.toml"
+    assert pyproject_path.exists(), f"pyproject.toml not found at {pyproject_path}"
+
+    content = pyproject_path.read_text(encoding="utf-8")
+    assert "addopts" in content, "pyproject.toml missing addopts"
+    assert 'not vault' in content, (
+        "pyproject.toml addopts does not deselect vault tests (-m \"not vault\"). "
+        "Vault tests must remain deselected by default while H: is defragmented."
+    )
+
