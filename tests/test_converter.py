@@ -598,3 +598,32 @@ def test_converter_rejects_conflicting_scale_method_in_same_folder_d2():
             )
 
 
+def test_converter_dirty_tree_guard_raises_and_allow_dirty_bypasses_d3(monkeypatch):
+    """D3: BatchConverter raises when tritforge/ has uncommitted changes, unless allow_dirty=True."""
+    with tempfile.TemporaryDirectory() as tmp_in_dir, tempfile.TemporaryDirectory() as tmp_out_dir:
+        in_path = Path(tmp_in_dir)
+        out_path = Path(tmp_out_dir)
+
+        # Mock check_git_dirty to return True (simulating dirty working tree)
+        import tritforge.converter
+        monkeypatch.setattr(tritforge.converter, "check_git_dirty", lambda: True)
+
+        with pytest.raises(RuntimeError, match="Refusing to run BatchConverter with uncommitted changes"):
+            BatchConverter(in_path, out_path)
+
+        # allow_dirty=True bypasses the check successfully
+        c = BatchConverter(in_path, out_path, allow_dirty=True)
+        assert c.allow_dirty is True
+
+
+def test_convert_overnight_dirty_tree_exits_nonzero_d3(monkeypatch):
+    """D3: convert_overnight main() exits non-zero when the working tree is dirty."""
+    import convert_overnight
+    monkeypatch.setattr(convert_overnight, "check_git_dirty", lambda: True)
+
+    with pytest.raises(SystemExit) as exc_info:
+        convert_overnight.main()
+    assert exc_info.value.code != 0
+
+
+
