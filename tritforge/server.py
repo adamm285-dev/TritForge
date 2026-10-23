@@ -265,7 +265,7 @@ WEB_UI_HTML = """<!DOCTYPE html>
               <span>Qwen 2.4T MoE Trination Progress</span>
               <span class="badge" style="background:#1f6feb;">~72.3% Disk Slashed</span>
             </div>
-            <div class="hero-subtitle">Autonomous Overnight Quantization Daemon • 1.58-Bit Base-3 Trits (72.3% Physical Disk Slashed • 92.8% RAM Footprint Slashed)</div>
+            <div class="hero-subtitle">Autonomous Overnight Quantization Daemon • 1.58-Bit Base-3 Trits (72.3% Physical Disk Slashed)</div>
           </div>
           <div class="hero-stat-box">
             <span class="hero-stat-pct" id="overall-pct-text">32.6%</span>
@@ -296,7 +296,7 @@ WEB_UI_HTML = """<!DOCTYPE html>
         <div class="kpi-card">
           <div class="kpi-label">Physical Storage Slashed</div>
           <div class="kpi-value" style="color: var(--expert-active);" id="kpi-savings">72.3% <span style="font-size:0.75rem; color:var(--text-muted); font-weight:normal;">vs FP8</span></div>
-          <div class="kpi-sub"><b id="kpi-output-gb">~189 GB</b> • 92.8% vs FP32</div>
+          <div class="kpi-sub"><b id="kpi-output-gb">~645 GB</b> • Native Base-3 .trit</div>
         </div>
 
         <div class="kpi-card">
@@ -375,9 +375,8 @@ WEB_UI_HTML = """<!DOCTYPE html>
       <div class="chat-pane">
         <div class="messages" id="messages">
           <div class="message assistant">
-            Hello! I am running on the <b>TritForge 1.58-Bit Hybrid Engine</b>. 
-            Expert weights are dynamically streamed in Base-3 packed trits with zero-multiply addition/subtraction GEMM, 
-            while Gatekeeper Attention is accelerated in high-precision VRAM.
+            Inference engine not loaded. Running in local audit & dashboard mode. 
+            Full qwen3_5_moe autoregressive generation requires Gated DeltaNet linear attention implementation (C-2).
           </div>
         </div>
         <div class="input-box">
@@ -401,7 +400,7 @@ WEB_UI_HTML = """<!DOCTYPE html>
           <div class="section-title" style="margin-bottom: 10px;">Hardware Telemetry</div>
           <div class="telemetry-row"><span>Host Workstation RAM:</span><span id="ram-meter">23.5 GB / 64 GB</span></div>
           <div class="telemetry-row"><span>GPU Attention VRAM:</span><span>~2.4 GB / 12 GB</span></div>
-          <div class="telemetry-row"><span>Storage Slashed:</span><span style="color: var(--expert-active);">~72.3% Disk (92.8% RAM)</span></div>
+          <div class="telemetry-row"><span>Storage Slashed:</span><span style="color: var(--expert-active);">~72.3% Disk</span></div>
           <div class="telemetry-row"><span>Arithmetic Ops:</span><span>Zero-Multiply (+/-)</span></div>
           <div class="telemetry-row"><span>Trit Container:</span><span>layer_00.trit (7.01 GB)</span></div>
         </div>
@@ -480,7 +479,7 @@ WEB_UI_HTML = """<!DOCTYPE html>
           <div class="modal-row"><span>Master Shard (FP8 on Disk):</span><b>~25.3 GB</b></div>
           <div class="modal-row"><span>Output .trit Container:</span><b style="color:var(--accent);">${outGb} GB</b></div>
           <div class="modal-row"><span>Physical Disk Slashed:</span><b style="color:var(--expert-active);">~72.3% vs FP8 Shards</b></div>
-          <div class="modal-row"><span>RAM Footprint Slashed:</span><b style="color:var(--accent);">92.8% vs FP32 <span style="font-size:0.75rem; color:var(--text-muted);">(86.2% vs FP16)</span></b></div>
+          <div class="modal-row"><span>Disk Footprint Slashed:</span><b style="color:var(--accent);">~72.3% vs FP8</b></div>
           <div class="modal-row"><span>Pacing Duration:</span><b>${duration} minutes</b></div>
           <div class="modal-row"><span>Physical File:</span><code style="font-size:0.75rem; color:var(--text-muted);">layer_${String(layerIdx).padStart(2, '0')}.trit</code></div>
           <div class="modal-row"><span>Integrity Status:</span><b>Conversion Layer Stored</b></div>
@@ -623,7 +622,7 @@ WEB_UI_HTML = """<!DOCTYPE html>
               <td>${row.num_experts} Experts</td>
               <td>~25.3 GB</td>
               <td><b style="color:var(--accent);">${(row.output_mb / 1024).toFixed(2)} GB</b></td>
-              <td><span style="color:var(--expert-active); font-weight:700;">~72.3% <span style="font-size:0.75rem; color:var(--text-muted); font-weight:normal;">(92.8% RAM)</span></span></td>
+              <td><span style="color:var(--expert-active); font-weight:700;">~72.3% Disk</span></td>
               <td>${row.duration_mins} mins</td>
               <td><span class="badge" style="background:#238636;">✓ Verified Locked</span></td>
             </tr>
