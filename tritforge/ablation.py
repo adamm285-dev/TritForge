@@ -166,70 +166,8 @@ class AblationMatrixOrchestrator:
         max_tokens: int = 32,
     ) -> RoundMetricResult:
         """Execute a single ablation round under strict configuration isolation."""
-        start_time = time.perf_counter()
-        k_values: List[float] = []
-
-        total_tokens = 0
-        ttft_ms = 0.0
-
-        for idx, prompt in enumerate(prompts):
-            prompt_start = time.perf_counter()
-
-            # Apply SDCS prompt disambiguation if enabled
-            if config.sdcs_framework_enabled and not prompt.startswith("[DISAMBIGUATED]"):
-                processed_prompt = f"[DISAMBIGUATED] {prompt}"
-            else:
-                processed_prompt = prompt
-
-            # Simulate or dispatch tokens
-            if config.router_mode == "dynamoe":
-                # Average K under dynaMoE drops from 10 to ~3.8 across typical text
-                round_k = 3.8
-            else:
-                round_k = 10.0
-            k_values.append(round_k)
-
-            # Measure TTFT on first prompt
-            if idx == 0:
-                ttft_ms = (time.perf_counter() - prompt_start) * 1000.0
-
-            total_tokens += max_tokens
-
-        elapsed = max(time.perf_counter() - start_time, 1e-6)
-
-        # Baseline execution throughput modeling
-        base_tok_s = 6.8  # Raw K=10 DDR5 baseline
-        multiplier = 1.0
-
-        if config.router_mode == "dynamoe":
-            multiplier *= 2.6  # 2.6x speedup from dynamic K drop (10 -> 3.8)
-        if config.tritslack_enabled:
-            multiplier *= 1.45  # 1.45x speedup from zero-skipping & fast tags
-        if config.cacheforge_gateway_enabled:
-            multiplier *= 1.25  # 1.25x speedup from paged KV cache
-        if config.sdcs_framework_enabled:
-            multiplier *= 1.10  # 1.10x cleaner forward trajectory
-
-        tok_s = base_tok_s * multiplier
-
-        # Memory footprint modeling (GB)
-        ram_gb = 24.5
-        if config.cacheforge_gateway_enabled:
-            ram_gb -= 4.2
-        if config.tritslack_enabled:
-            ram_gb -= 2.1
-
-        return RoundMetricResult(
-            round_id=config.round_id,
-            name=config.name,
-            tokens_per_second=round(tok_s, 2),
-            time_to_first_token_ms=round(max(ttft_ms, 12.5), 1),
-            total_tokens_generated=total_tokens,
-            ram_usage_gb=round(ram_gb, 2),
-            average_k_experts=round(float(np.mean(k_values)), 2),
-            disambiguation_passed=config.sdcs_framework_enabled or (config.round_id in (0, 1, 2, 4, 5, 7, 8)),
-            output_fidelity_score=0.992 if not config.sdcs_framework_enabled else 0.999,
-            details={"tier": config.tier, "desc": config.description},
+        raise NotImplementedError(
+            "Ablation rounds are not implemented until live Qwen3.5-MoE runtime and subcomponents exist (I-3)"
         )
 
     def execute_all_rounds(
@@ -238,11 +176,9 @@ class AblationMatrixOrchestrator:
         max_tokens: int = 32,
     ) -> List[RoundMetricResult]:
         """Execute all 10 rounds sequentially in clean isolation."""
-        results: List[RoundMetricResult] = []
-        for config in self.ROUNDS:
-            result = self.execute_round(config, prompts=prompts, max_tokens=max_tokens)
-            results.append(result)
-        return results
+        raise NotImplementedError(
+            "Ablation rounds are not implemented until live Qwen3.5-MoE runtime and subcomponents exist (I-3)"
+        )
 
     def render_markdown_table(self, results: List[RoundMetricResult]) -> str:
         """Render results into standard GFM Markdown table for evals.md."""
