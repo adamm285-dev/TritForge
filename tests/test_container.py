@@ -154,3 +154,36 @@ def test_save_and_seek_load_trit_layer(temp_trit_file):
     out_orig = layer.forward(x)
     out_loaded = loaded_layer.forward(x)
     assert np.allclose(out_orig, out_loaded, atol=1e-3)
+
+
+
+def test_load_trit_layer_with_converter_hf_keys():
+    """C-6: Verify load_trit_layer correctly loads container using converter's HF key format."""
+    import tempfile
+    from tritforge.container import StreamingTritWriter, load_trit_layer
+    from tritforge.quantize import absmax_ternary_quantize
+    from tritforge.moe import Layer0AsymmetricMoE
+
+    hid, inter, n_exp = 64, 32, 4
+    rng = np.random.RandomState(42)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        p = Path(tmp_dir) / "layer_hf_keys.trit"
+        w = StreamingTritWriter(p, layer_idx=0)
+        w.add_raw_array("mlp.gate.weight", rng.randn(n_exp, hid).astype(np.float32))
+        w.add_raw_array("post_attention_layernorm.weight", np.ones(hid, np.float32))
+        w.add_raw_array("mlp.shared_expert.gate_proj.weight", rng.randn(inter, hid).astype(np.float32))
+        w.add_raw_array("mlp.shared_expert.up_proj.weight", rng.randn(inter, hid).astype(np.float32))
+        w.add_raw_array("mlp.shared_expert.down_proj.weight", rng.randn(hid, inter).astype(np.float32))
+
+        for e in range(n_exp):
+            for proj, shp in (("gate_proj", (inter, hid)), ("up_proj", (inter, hid)), ("down_proj", (hid, inter))):
+                w.add_quantized_matrix(f"experts.{e}.{proj}", absmax_ternary_quantize(rng.randn(*shp).astype(np.float32), block_size=16))
+        w.close()
+
+        # Mode 3 load
+        layer = load_trit_layer(p)
+        assert isinstance(layer, Layer0AsymmetricMoE)
+        assert len(layer.experts) == n_exp
+        assert layer.router is not None
+        assert layer.shared_expert is not None

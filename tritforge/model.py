@@ -24,6 +24,8 @@ Enforces:
 
 from __future__ import annotations
 
+from collections import OrderedDict
+
 import threading
 import time
 from dataclasses import asdict, dataclass, field
@@ -211,19 +213,21 @@ class StreamingMoELayer:
         self.max_cached_experts = max_cached_experts
         self.layer_idx = layer_idx
 
-        # In-memory expert cache: expert_idx -> TernaryExpert
-        self.experts: Dict[int, TernaryExpert] = dict(experts) if experts is not None else {}
+        # In-memory expert cache: expert_idx -> TernaryExpert (OrderedDict for LRU, C-5)
+        self.experts: OrderedDict[int, TernaryExpert] = OrderedDict(experts) if experts is not None else OrderedDict()
         self.lru_order: List[int] = list(self.experts.keys())
         self._lock = threading.Lock()
 
     def _ensure_experts_loaded(self, active_expert_ids: Sequence[int]) -> Dict[int, TernaryExpert]:
         """
-        Loads missing active experts from .trit file via seek-based extraction.
-        Maintains an LRU eviction cache to bound memory ceiling.
+        Loads missing active experts from .trit file via seek-based extraction (C-5).
+        Enforces true LRU eviction (OrderedDict) and NEVER evicts experts needed in the current active set.
         Thread-safe: protected by self._lock.
         """
         with self._lock:
-            needed = [e for e in active_expert_ids if e not in self.experts]
+            active_set = set(int(e) for e in active_expert_ids)
+            needed = [e for e in active_set if e not in self.experts]
+
             if needed:
                 if self.trit_path is None or not self.trit_path.exists():
                     raise FileNotFoundError(
@@ -231,17 +235,35 @@ class StreamingMoELayer:
                         f".trit container provided at {self.trit_path}"
                     )
 
-                # Seek-load only the needed experts
                 for e_id in needed:
                     expert = load_trit_layer(self.trit_path, expert_idx=int(e_id))
                     self.experts[int(e_id)] = expert
-                    self.lru_order.append(int(e_id))
+                    if hasattr(self.experts, "move_to_end"):
+                        self.experts.move_to_end(int(e_id))
+                    else:
+                        if int(e_id) in self.lru_order:
+                            self.lru_order.remove(int(e_id))
+                        self.lru_order.append(int(e_id))
 
-                # Evict if exceeding max cache
-                while len(self.experts) > self.max_cached_experts:
-                    evict_id = self.lru_order.pop(0)
+            # Refresh LRU recency for active hits
+            for e_id in active_set:
+                if e_id in self.experts:
+                    if hasattr(self.experts, "move_to_end"):
+                        self.experts.move_to_end(e_id)
+                    elif hasattr(self, "lru_order") and e_id in self.lru_order:
+                        self.lru_order.remove(e_id)
+                        self.lru_order.append(e_id)
+
+            # Evict down to target cache size, BUT NEVER evict any expert in the current active_set (C-5)
+            target_capacity = max(self.max_cached_experts, len(active_set))
+            if hasattr(self.experts, "keys"):
+                candidates = [k for k in list(self.experts.keys()) if k not in active_set]
+                while len(self.experts) > target_capacity and candidates:
+                    evict_id = candidates.pop(0)
                     if evict_id in self.experts:
                         del self.experts[evict_id]
+                    if hasattr(self, "lru_order") and evict_id in self.lru_order:
+                        self.lru_order.remove(evict_id)
 
             return {e: self.experts[e] for e in active_expert_ids if e in self.experts}
 
@@ -258,7 +280,7 @@ class StreamingMoELayer:
         x_2d = x.reshape(-1, orig_shape[-1]).astype(np.float32)
 
         # 1. Normalization
-        normed_x = rmsnorm(x_2d, self.norm_weight) if self.norm_weight is not None else x_2d
+        normed_x = rmsnorm(x_2d, self.norm_weight, zero_centered=True) if self.norm_weight is not None else x_2d
 
         # 2. Gatekeeper top-k routing
         topk_indices, topk_probs = self.router.forward(normed_x, top_k=self.num_experts_per_tok)
@@ -330,7 +352,7 @@ class AsymmetricTransformerBlock:
             telemetry: Optional dictionary of routing/execution metrics.
         """
         # 1. Attention Block with Residual
-        normed_attn_in = rmsnorm(x, self.input_layernorm_weight, eps=self.config.rms_norm_eps)
+        normed_attn_in = rmsnorm(x, self.input_layernorm_weight, eps=self.config.rms_norm_eps, zero_centered=True)
         attn_out, new_kv_cache = self.self_attn.forward(
             normed_attn_in,
             causal_mask=causal_mask,
@@ -339,7 +361,7 @@ class AsymmetricTransformerBlock:
         h = x + attn_out
 
         # 2. MoE Block with Residual
-        normed_moe_in = rmsnorm(h, self.post_attention_layernorm_weight, eps=self.config.rms_norm_eps)
+        normed_moe_in = rmsnorm(h, self.post_attention_layernorm_weight, eps=self.config.rms_norm_eps, zero_centered=True)
 
         telemetry: Optional[Dict[str, Any]] = None
         if isinstance(self.moe, StreamingMoELayer):
@@ -443,7 +465,7 @@ class TritForgeModel:
             layer_telemetries.append(telemetry)
 
         # 3. Final RMSNorm
-        h = rmsnorm(h, self.norm, eps=self.config.rms_norm_eps)
+        h = rmsnorm(h, self.norm, eps=self.config.rms_norm_eps, zero_centered=True)
 
         # 4. LM Head Projection: (B, S, vocab_size)
         if self.lm_head is not None:

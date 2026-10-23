@@ -282,3 +282,48 @@ def test_generation_fidelity_evaluator():
     assert np.isclose(metrics.mean_cosine_similarity, 1.0, atol=1e-5)
     assert metrics.top1_agreement_rate == 1.0
     assert metrics.trajectory_blend_score >= 0.90
+
+
+
+def test_streaming_moe_cache_does_not_evict_active_batch_experts():
+    """C-5: Verify StreamingMoELayer does not drop active experts when active > cache size."""
+    import tempfile
+    from tritforge.container import StreamingTritWriter, load_trit_layer
+    from tritforge.quantize import absmax_ternary_quantize
+    from tritforge.moe import MoERouter, TernaryExpert
+
+    hid, inter, n_exp, k = 64, 32, 64, 8
+    rng = np.random.RandomState(42)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        trit_path = Path(tmp_dir) / "layer_test.trit"
+        w = StreamingTritWriter(trit_path, layer_idx=0)
+        experts_mem = {}
+        for e in range(n_exp):
+            q_g = absmax_ternary_quantize(rng.randn(inter, hid).astype(np.float32), block_size=16)
+            q_u = absmax_ternary_quantize(rng.randn(inter, hid).astype(np.float32), block_size=16)
+            q_d = absmax_ternary_quantize(rng.randn(hid, inter).astype(np.float32), block_size=16)
+            w.add_quantized_matrix(f"experts.{e}.gate_proj", q_g)
+            w.add_quantized_matrix(f"experts.{e}.up_proj", q_u)
+            w.add_quantized_matrix(f"experts.{e}.down_proj", q_d)
+            experts_mem[e] = TernaryExpert(e, q_g, q_u, q_d)
+        w.close()
+
+        gate_w = rng.randn(n_exp, hid).astype(np.float32)
+        router = MoERouter(gate_weight=gate_w, num_experts=n_exp, num_experts_per_tok=k)
+
+        # 16 tokens x top-8 activates most of the 64 experts
+        x = rng.randn(16, hid).astype(np.float32)
+
+        # Cache size of 8 (far smaller than ~40-60 active experts)
+        # Pre-load reference experts directly from container so FP16 scale quantization matches exactly
+        experts_from_container = {e: load_trit_layer(trit_path, expert_idx=e) for e in range(n_exp)}
+
+        stream_layer = StreamingMoELayer(router, trit_path=trit_path, num_experts=n_exp, num_experts_per_tok=k, max_cached_experts=8)
+        full_layer = StreamingMoELayer(router, experts=experts_from_container, num_experts=n_exp, num_experts_per_tok=k, max_cached_experts=1000)
+
+        y_stream, info_stream = stream_layer.forward(x, residual=False, collect_metrics=True)
+        y_full = full_layer.forward(x, residual=False)
+
+        # Reconstructed outputs must match in-memory ground truth without dropped experts
+        np.testing.assert_allclose(y_stream, y_full, rtol=1e-4, atol=1e-5)

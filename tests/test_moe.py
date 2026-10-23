@@ -30,7 +30,7 @@ def test_rmsnorm():
     rng = np.random.RandomState(42)
     x = rng.randn(4, 128).astype(np.float32)
     w = np.ones(128, dtype=np.float32) * 2.0
-    normed = rmsnorm(x, w)
+    normed = rmsnorm(x, w, zero_centered=False)
     assert normed.shape == (4, 128)
     # RMS of normalized output should be close to 2.0
     rms = np.sqrt(np.mean(np.square(normed), axis=-1))
@@ -204,3 +204,36 @@ def test_live_assemble_layer0_moe():
     assert moe_layer.router.gate_weight.shape == (512, 8192)
     assert 0 in moe_layer.experts
     assert moe_layer.shared_expert is not None
+
+
+
+def test_zero_centered_rmsnorm_convention():
+    """C-1: Verify that zero-centered RMSNorm computes y = x_hat * (1.0 + weight)."""
+    dim = 64
+    rng = np.random.RandomState(42)
+    x = rng.randn(2, dim).astype(np.float32)
+    w = (rng.randn(dim) * 0.1).astype(np.float32)
+
+    # 1. Zero-centered (default for decoder norms)
+    out_zc = rmsnorm(x, w, zero_centered=True)
+    var = np.mean(x ** 2, axis=-1, keepdims=True)
+    expected_zc = (x / np.sqrt(var + 1e-6)) * (1.0 + w)
+    np.testing.assert_allclose(out_zc, expected_zc, rtol=1e-5, atol=1e-6)
+
+    # 2. Non-zero centered (standard)
+    out_std = rmsnorm(x, w, zero_centered=False)
+    expected_std = (x / np.sqrt(var + 1e-6)) * w
+    np.testing.assert_allclose(out_std, expected_std, rtol=1e-5, atol=1e-6)
+
+    # 3. Test against PyTorch / transformers Qwen3_5MoeRMSNorm if available
+    try:
+        import torch
+        from transformers.models.qwen3_5_moe.modeling_qwen3_5_moe import Qwen3_5MoeRMSNorm
+
+        ref_norm = Qwen3_5MoeRMSNorm(dim=dim, eps=1e-6)
+        ref_norm.weight.data = torch.from_numpy(w).float()
+        with torch.no_grad():
+            ref_out = ref_norm(torch.from_numpy(x).float()).numpy()
+        np.testing.assert_allclose(out_zc, ref_out, rtol=1e-5, atol=1e-6)
+    except ImportError:
+        pass

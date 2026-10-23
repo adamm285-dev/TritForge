@@ -520,26 +520,33 @@ def load_trit_layer(
             down_proj=q_down,
         )
 
-    # Mode 3: Load full Layer0AsymmetricMoE
+    # Mode 3: Load full Layer0AsymmetricMoE (supports both HF and legacy key schemas, C-6)
     # 1. Load Router
-    if "router.weight" in tensors:
-        router_w = load_trit_tensor(path, "router.weight", header=header, payload_start_offset=payload_start)
+    r_key = "mlp.gate.weight" if "mlp.gate.weight" in tensors else ("router.weight" if "router.weight" in tensors else None)
+    if r_key is not None:
+        router_w = load_trit_tensor(path, r_key, header=header, payload_start_offset=payload_start)
         router = MoERouter(gate_weight=router_w)
     else:
         router = None
 
     # 2. Load Layernorms
-    input_norm = None
-    if "input_layernorm.weight" in tensors:
-        input_norm = load_trit_tensor(path, "input_layernorm.weight", header=header, payload_start_offset=payload_start)
+    in_key = "input_layernorm.weight" if "input_layernorm.weight" in tensors else None
+    input_norm = load_trit_tensor(path, in_key, header=header, payload_start_offset=payload_start) if in_key else None
 
-    post_norm = None
-    if "post_attention_layernorm.weight" in tensors:
-        post_norm = load_trit_tensor(path, "post_attention_layernorm.weight", header=header, payload_start_offset=payload_start)
+    post_key = "post_attention_layernorm.weight" if "post_attention_layernorm.weight" in tensors else None
+    post_norm = load_trit_tensor(path, post_key, header=header, payload_start_offset=payload_start) if post_key else None
 
     # 3. Load Shared Expert
     shared_exp = None
-    if "shared_expert.gate_proj" in tensors:
+    if "mlp.shared_expert.gate_proj.weight" in tensors:
+        s_gate = load_trit_tensor(path, "mlp.shared_expert.gate_proj.weight", header=header, payload_start_offset=payload_start)
+        s_up = load_trit_tensor(path, "mlp.shared_expert.up_proj.weight", header=header, payload_start_offset=payload_start)
+        s_down = load_trit_tensor(path, "mlp.shared_expert.down_proj.weight", header=header, payload_start_offset=payload_start)
+        s_gate_w = None
+        if "mlp.shared_expert_gate.weight" in tensors:
+            s_gate_w = load_trit_tensor(path, "mlp.shared_expert_gate.weight", header=header, payload_start_offset=payload_start)
+        shared_exp = SharedExpert(gate_proj=s_gate, up_proj=s_up, down_proj=s_down, gate_weight=s_gate_w)
+    elif "shared_expert.gate_proj" in tensors:
         s_gate = load_trit_tensor(path, "shared_expert.gate_proj", header=header, payload_start_offset=payload_start)
         s_up = load_trit_tensor(path, "shared_expert.up_proj", header=header, payload_start_offset=payload_start)
         s_down = load_trit_tensor(path, "shared_expert.down_proj", header=header, payload_start_offset=payload_start)

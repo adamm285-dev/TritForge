@@ -247,7 +247,7 @@ class HybridTransformerBlock:
         Executes hybrid transformer forward pass.
         """
         # 1. Attention pathway (GPU offloaded if available)
-        normed_attn_in = rmsnorm(x, self.input_layernorm_weight, eps=self.config.rms_norm_eps)
+        normed_attn_in = rmsnorm(x, self.input_layernorm_weight, eps=self.config.rms_norm_eps, zero_centered=True)
         attn_out, new_kv_cache = self.hybrid_attn.forward(
             normed_attn_in,
             causal_mask=causal_mask,
@@ -256,7 +256,7 @@ class HybridTransformerBlock:
         h = x + attn_out
 
         # 2. MoE Expert pathway (CPU Zero-Multiply GEMM)
-        normed_moe_in = rmsnorm(h, self.post_attention_layernorm_weight, eps=self.config.rms_norm_eps)
+        normed_moe_in = rmsnorm(h, self.post_attention_layernorm_weight, eps=self.config.rms_norm_eps, zero_centered=True)
 
         telemetry: Optional[Dict[str, Any]] = None
         if isinstance(self.moe, StreamingMoELayer):
@@ -324,7 +324,7 @@ class HybridTritForgeModel:
             new_kv_caches.append(updated_cache)
             layer_telemetries.append(telemetry)
 
-        h = rmsnorm(h, self.norm, eps=self.config.rms_norm_eps)
+        h = rmsnorm(h, self.norm, eps=self.config.rms_norm_eps, zero_centered=True)
 
         if self.lm_head is not None:
             logits = np.matmul(h, self.lm_head.T)

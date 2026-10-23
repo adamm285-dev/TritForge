@@ -45,14 +45,24 @@ def silu(x: np.ndarray) -> np.ndarray:
     return x / (1.0 + np.exp(-clipped))
 
 
-def rmsnorm(x: np.ndarray, weight: np.ndarray, eps: float = 1e-6) -> np.ndarray:
+def rmsnorm(x: np.ndarray, weight: np.ndarray, eps: float = 1e-6, zero_centered: bool = True) -> np.ndarray:
     """
-    Root Mean Square Layer Normalization (RMSNorm) in pure NumPy.
-    y = (x / sqrt(mean(x^2) + eps)) * weight
+    Root Mean Square Layer Normalization (RMSNorm) in pure NumPy (C-1).
+
+    Args:
+        x: Input activations of shape (..., hidden_size)
+        weight: Scale parameter vector of shape (hidden_size,)
+        eps: Small epsilon for numerical stability
+        zero_centered: If True (default for Qwen3.5 decoder / q / k / final norms),
+                       computes y = x_hat * (1.0 + weight).
+                       If False (e.g. for linear_attn gated norm), computes y = x_hat * weight.
     """
     variance = np.mean(np.square(x), axis=-1, keepdims=True)
     normed = x / np.sqrt(variance + eps)
-    return normed * weight
+    if zero_centered:
+        return normed * (1.0 + weight)
+    else:
+        return normed * weight
 
 
 def ternary_gemm(
@@ -264,7 +274,7 @@ class Layer0AsymmetricMoE:
 
         # Post-attention layernorm before entering MoE
         if self.post_attention_layernorm_weight is not None:
-            normed_x = rmsnorm(x_in, self.post_attention_layernorm_weight)
+            normed_x = rmsnorm(x_in, self.post_attention_layernorm_weight, zero_centered=True)
         else:
             normed_x = x_in
 
@@ -398,12 +408,12 @@ def assemble_layer0_moe(
 
         # Pass through input layernorm if present
         if "input_layernorm" in gatekeeper:
-            x_norm1 = rmsnorm(embeddings, gatekeeper["input_layernorm"])
+            x_norm1 = rmsnorm(embeddings, gatekeeper["input_layernorm"], zero_centered=True)
         else:
             x_norm1 = embeddings
 
         if "post_attention_layernorm" in gatekeeper:
-            x_calib = rmsnorm(x_norm1, gatekeeper["post_attention_layernorm"])
+            x_calib = rmsnorm(x_norm1, gatekeeper["post_attention_layernorm"], zero_centered=True)
         else:
             x_calib = x_norm1
 

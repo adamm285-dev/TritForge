@@ -96,9 +96,10 @@ def collect_layer0_empirical_activations(
         embeddings = extract_token_embeddings(tids, base_dir=base)
         gatekeeper = extract_layer0_gatekeeper(base)
 
-        def _rmsnorm(x, w, eps=1e-6):
+        def _rmsnorm(x, w, eps=1e-6, zero_centered=True):
             var = np.mean(np.square(x), axis=-1, keepdims=True)
-            return (x / np.sqrt(var + eps)) * w
+            normed = x / np.sqrt(var + eps)
+            return normed * (1.0 + w) if zero_centered else normed * w
 
         if "input_layernorm" in gatekeeper:
             x_norm1 = _rmsnorm(embeddings, gatekeeper["input_layernorm"])

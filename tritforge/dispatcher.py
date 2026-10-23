@@ -92,7 +92,7 @@ class MoEBatchDispatcher:
 
         # 1. Pre-MoE Normalization
         if self.norm_weight is not None:
-            normed_x = rmsnorm(x_2d, self.norm_weight)
+            normed_x = rmsnorm(x_2d, self.norm_weight, zero_centered=True)
         else:
             normed_x = x_2d
 
@@ -132,7 +132,9 @@ class MoEBatchDispatcher:
             expert_counts[int(e_id)] = token_count
 
             if e_id not in self.experts:
-                continue
+                raise KeyError(
+                    f"Expert {e_id} required for active batch was not loaded in memory (C-5)"
+                )
 
             expert = self.experts[e_id]
             batch_tok_ids = sorted_token_ids[start_i:end_i]
