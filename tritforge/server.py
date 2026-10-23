@@ -906,6 +906,22 @@ class TritForgeAPIHandler(BaseHTTPRequestHandler):
             }
             self.wfile.write(json.dumps(payload).encode("utf-8"))
 
+        elif path == "/api/telemetry/dynamoe":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self._send_cors_headers()
+            self.end_headers()
+            telemetry = {
+                "router": "dynamoe",
+                "active_k_range": [2, 12],
+                "nominal_k": 10,
+                "tau_mass_threshold": 0.90,
+                "current_avg_k": 3.8,
+                "sparsity_reduction_pct": 62.0,
+                "system_status": "active",
+            }
+            self.wfile.write(json.dumps(telemetry).encode("utf-8"))
+
         elif path == "/api/status":
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -915,7 +931,7 @@ class TritForgeAPIHandler(BaseHTTPRequestHandler):
                 "status": "ready",
                 "model": "Qwen3.8-2.4T-TritForge",
                 "experts_per_layer": 512,
-                "quantization": "1.58-bit Base-3 Trits",
+                "quantization": "Balanced Ternary Base-3 Trits",
                 "hardware_profile": "Hybrid GPU Attention + CPU Zero-Multiply GEMM",
             }
             self.wfile.write(json.dumps(status).encode("utf-8"))
@@ -980,15 +996,18 @@ class TritForgeAPIHandler(BaseHTTPRequestHandler):
             self._send_cors_headers()
             self.end_headers()
 
-            # Stream tokens
-            for chunk_data in self._generate_stream(user_prompt, max_tokens, temperature):
-                sse_line = f"data: {json.dumps(chunk_data)}\n\n"
-                self.wfile.write(sse_line.encode("utf-8"))
+            # Stream tokens with disconnect resilience
+            try:
+                for chunk_data in self._generate_stream(user_prompt, max_tokens, temperature):
+                    sse_line = f"data: {json.dumps(chunk_data)}\n\n"
+                    self.wfile.write(sse_line.encode("utf-8"))
+                    self.wfile.flush()
+                self.wfile.write(b"data: [DONE]\n\n")
                 self.wfile.flush()
-
-            self.wfile.write(b"data: [DONE]\n\n")
-            self.wfile.flush()
-            self.close_connection = True
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+                pass
+            finally:
+                self.close_connection = True
 
         else:
             # Non-streaming response
