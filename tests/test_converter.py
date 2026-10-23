@@ -735,9 +735,29 @@ def test_overnight_run_calls_preflight_first_e3(monkeypatch, tmp_path):
     tmp_in.mkdir()
 
     with pytest.raises(PreflightSentinel, match="preflight called"):
-        overnight.run(tmp_in, tmp_out, total_layers=1)
+        overnight.run(
+            tmp_in,
+            tmp_out,
+            gatekeeper_dtype="bfloat16",
+            scale_method="ls_optimal",
+            total_layers=1,
+        )
 
     assert not tmp_out.exists() or list(tmp_out.iterdir()) == []
+
+
+def test_overnight_run_requires_experiment_arm_parameters_f():
+    """Part F: run() must require gatekeeper_dtype and scale_method with no defaults."""
+    import inspect
+    from tritforge import overnight
+
+    sig = inspect.signature(overnight.run)
+    params = sig.parameters
+    assert "gatekeeper_dtype" in params, "gatekeeper_dtype must be an argument of run()"
+    assert "scale_method" in params, "scale_method must be an argument of run()"
+    assert params["gatekeeper_dtype"].default is inspect.Parameter.empty, "gatekeeper_dtype must have no default"
+    assert params["scale_method"].default is inspect.Parameter.empty, "scale_method must have no default"
+
 
 
 

@@ -95,19 +95,27 @@ def verified_done_layers(output_dir: Union[str, Path]) -> Set[int]:
 def run(
     input_dir: Union[str, Path],
     output_dir: Union[str, Path],
+    gatekeeper_dtype: str,
+    scale_method: str,
     total_layers: int = 92,
     max_loops: Optional[int] = None,
 ) -> None:
     """
     Main conversion loop for the overnight daemon.
     Calls preflight() before anything else.
+    gatekeeper_dtype and scale_method are required with no defaults (Part F).
     """
     preflight()
 
     in_path = Path(input_dir)
     out_path = Path(output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
-    converter = BatchConverter(input_dir=in_path, output_dir=out_path)
+    converter = BatchConverter(
+        input_dir=in_path,
+        output_dir=out_path,
+        gatekeeper_dtype=gatekeeper_dtype,
+        scale_method=scale_method,
+    )
 
     loop_count = 0
     while True:
