@@ -3,8 +3,7 @@
 Conforms to SPEC-001 & SPEC-002 Cybernetic Loop requirements.
 Empirically quantifies whether dynaMoE's dynamic expert scaling (K in [2, 12])
 maintains routing stability and probability mass concentration relative to
-fixed-K=10 baselines, mathematically proving that dynamic gating trims
-computational noise without sacrificing decision certainty.
+fixed-K=10 baselines.
 """
 
 from dataclasses import dataclass, field
@@ -21,7 +20,7 @@ class RouterStabilityMetrics:
     mean_top1_confidence: float
     mean_topk_mass: float
     average_k_selected: float
-    noise_reduction_ratio: float
+    skipped_expert_ratio: float
     is_stable: bool
     details: Dict[str, Any] = field(default_factory=dict)
 
@@ -85,10 +84,11 @@ class RouterStabilityEvaluator:
         mean_mass = float(np.mean(topk_masses)) if topk_masses else 0.0
         avg_k = float(np.mean(k_counts)) if k_counts else float(nominal_k)
 
-        # Noise reduction ratio: percentage of expert evaluations saved
-        noise_reduction = float(max(0.0, (nominal_k - avg_k) / nominal_k))
+        # Skipped expert ratio: percentage of expert evaluations skipped vs nominal K
+        skipped_ratio = float(max(0.0, (nominal_k - avg_k) / nominal_k))
 
         # Stability invariant: captured probability mass >= 85% and entropy variance bounded
+        # Note: on this trained model, typical tokens distribute mass widely and rarely reach 0.85
         is_stable = (mean_mass >= 0.85) and (entropy_var < 5.0)
 
         return RouterStabilityMetrics(
@@ -97,7 +97,7 @@ class RouterStabilityEvaluator:
             mean_top1_confidence=round(mean_top1, 4),
             mean_topk_mass=round(mean_mass, 4),
             average_k_selected=round(avg_k, 2),
-            noise_reduction_ratio=round(noise_reduction, 4),
+            skipped_expert_ratio=round(skipped_ratio, 4),
             is_stable=is_stable,
             details={
                 "tokens_evaluated": len(logits_history),
