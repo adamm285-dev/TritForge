@@ -137,3 +137,51 @@ def test_cli_verify_shards_command(capsys):
         captured = capsys.readouterr()
         assert "Master Shard Archive Health & Integrity Audit" in captured.out
         assert "ALL SHARDS HEALTHY" in captured.out
+
+
+def test_verify_trit_flags_manifest_size_mismatch_d8b():
+    """D8b: verify_trit_directory reports manifest size mismatch when container size != manifest output_bytes.
+    Fails if size_match check is forced to True."""
+    from tritforge.verifier import verify_trit_directory
+    from tritforge.container import StreamingTritWriter
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        out_dir = Path(tmp_dir)
+
+        # 1. Create a minimal valid layer_00.trit container
+        writer = StreamingTritWriter(
+            out_dir / "layer_00.trit",
+            layer_idx=0,
+            extra_metadata={"num_experts": 0, "expert_indices": []},
+        )
+        writer.add_raw_array("dummy", np.zeros((4, 4), dtype=np.float32))
+        writer.close()
+
+        container_file = out_dir / "layer_00.trit"
+        actual_size = container_file.stat().st_size
+        wrong_size = actual_size + 1024  # Deliberate size mismatch
+
+        # 2. Write manifest with wrong output_bytes
+        manifest_data = {
+            "completed_layers": [0],
+            "metrics": {
+                "0": {
+                    "output_bytes": wrong_size,
+                    "sha256": "",
+                }
+            },
+        }
+        (out_dir / "conversion_manifest.json").write_text(json.dumps(manifest_data), encoding="utf-8")
+
+        # 3. Verify directory
+        report = verify_trit_directory(out_dir, no_hash=True)
+
+        assert len(report.containers) == 1
+        c = report.containers[0]
+        # manifest_size_match must be False
+        assert c.manifest_size_match is False, f"Expected manifest_size_match=False for size {actual_size} vs {wrong_size}"
+        # manifest_mismatches list must contain the size mismatch error
+        assert any("size mismatch" in m and f"file is {actual_size} bytes" in m for m in report.manifest_mismatches), (
+            f"Expected size mismatch recorded in manifest_mismatches: {report.manifest_mismatches}"
+        )
+
