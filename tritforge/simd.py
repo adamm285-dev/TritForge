@@ -105,16 +105,32 @@ class SimdZeroMultiplyKernel:
 
     @classmethod
     def get_hardware_capabilities(cls) -> Dict[str, Any]:
-        """Detect and return host CPU SIMD vector extensions via py-cpuinfo (I-8)."""
-        flags: set[str] = set()
-        l3_bytes = 0
+        """Detect and return host CPU SIMD vector extensions via py-cpuinfo (I-8, B5).
+        
+        If py-cpuinfo is not installed or fails, flags are reported as None (unknown)
+        rather than asserting False.
+        """
+        flags: Optional[set[str]] = None
+        l3_bytes: Optional[int] = None
         try:
             import cpuinfo
             info = cpuinfo.get_cpu_info()
             flags = set(info.get("flags", []))
-            l3_bytes = info.get("l3_cache_size", 0) or 0
+            l3_bytes = info.get("l3_cache_size", None)
         except Exception:
-            pass
+            flags = None
+            l3_bytes = None
+
+        if flags is None:
+            return {
+                "has_avx2": None,
+                "has_avx512f": None,
+                "has_avx512bw": None,
+                "has_avx512vnni": None,
+                "vector_width_bits": None,
+                "l3_cache_bytes": None,
+                "simd_available": None,
+            }
 
         has_avx512 = "avx512f" in flags
         has_avx2 = "avx2" in flags
@@ -127,5 +143,5 @@ class SimdZeroMultiplyKernel:
             "has_avx512vnni": "avx512vnni" in flags,
             "vector_width_bits": vec_width,
             "l3_cache_bytes": l3_bytes,
-            "zero_multiply_native": bool(has_avx2 or has_avx512),
+            "simd_available": bool(has_avx2 or has_avx512),
         }

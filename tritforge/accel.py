@@ -124,8 +124,13 @@ class HybridAttention:
                 self.o_proj_t = torch.from_numpy(o_proj).to(dtype=t_dtype, device=self.torch_device)
                 self.scale = 1.0 / np.sqrt(float(config.head_dim))
                 self.torch_initialized = True
-            except Exception:
-                # Graceful fallback to pure NumPy on any torch initialization error
+            except Exception as e:
+                # Log fallback reason instead of swallowing silently (W2-8)
+                import logging
+                logging.getLogger("tritforge.accel").warning(
+                    f"HybridAttention PyTorch initialization failed on device {self.resolved_device}: {e!r}. "
+                    "Falling back to pure NumPy execution."
+                )
                 self.torch_initialized = False
                 self.resolved_device = "pure_numpy"
 
@@ -204,10 +209,10 @@ class HybridAttention:
                 mask_val = -65000.0 if self.t_dtype == torch.float16 else -1e9
                 scores = scores.masked_fill(mask.unsqueeze(0).unsqueeze(0), mask_val)
 
-            attn_probs = torch.softmax(scores, dim=-1)
+            attn_probs = torch.softmax(scores.to(dtype=torch.float32), dim=-1).to(dtype=self.t_dtype)
             context = torch.matmul(attn_probs, v_expanded)
 
-            context = context.transpose(1, 2).contiguous().view(b_sz, seq_len, self.config.hidden_size)
+            context = context.transpose(1, 2).contiguous().view(b_sz, seq_len, num_h * h_dim)
             out_t = torch.matmul(context, self.o_proj_t.t())
 
             # Return NumPy array to preserve unified interface

@@ -144,30 +144,32 @@ def absmax_ternary_quantize(
         scales = scale
 
     elif scaling_mode == "block":
-        if scale_method == "ls_optimal" and (n % block_size == 0):
-            # C-8 / Q-1: Closed-form Least-Squares optimal ternary quantization per block
-            # Vectorized across rows and blocks without calibration
-            bs = block_size
-            blocks = W.reshape(m, n // bs, bs)
-            a = np.abs(blocks)
-            s = -np.sort(-a, axis=2)
-            c = np.cumsum(s, axis=2)
-            ks = np.arange(1, bs + 1, dtype=np.float32)
-            k = np.argmax(c * c / ks, axis=2) + 1  # (m, n // bs)
-            thr = np.take_along_axis(s, (k - 1)[..., None], 2)  # (m, n // bs, 1)
-            alpha = (np.take_along_axis(c, (k - 1)[..., None], 2) / k[..., None]).astype(np.float16).astype(np.float32)
-            trits = np.where(a >= thr, np.sign(blocks), 0).astype(np.int8).reshape(m, n)
-            scales = alpha.reshape(m, n // bs)
-        else:
-            n_blocks = int(np.ceil(n / block_size))
-            scales = np.zeros((m, n_blocks), dtype=np.float32)
-            trits = np.zeros((m, n), dtype=np.int8)
+        n_blocks = int(np.ceil(n / block_size))
+        scales = np.zeros((m, n_blocks), dtype=np.float32)
+        trits = np.zeros((m, n), dtype=np.int8)
 
+        if scale_method == "ls_optimal":
+            # Vectorized least-squares optimal block quantization handling ragged last blocks
+            for b_idx in range(n_blocks):
+                col_start = b_idx * block_size
+                col_end = min(col_start + block_size, n)
+                k_cols = col_end - col_start
+                w_b = W[:, col_start:col_end]
+                a_b = np.abs(w_b)
+                s_b = -np.sort(-a_b, axis=1)
+                c_b = np.cumsum(s_b, axis=1)
+                ks = np.arange(1, k_cols + 1, dtype=np.float32)
+                best_k = np.argmax(c_b * c_b / ks, axis=1) + 1  # (m,)
+                thr_b = np.take_along_axis(s_b, (best_k - 1)[:, None], 1)  # (m, 1)
+                alpha_b = (np.take_along_axis(c_b, (best_k - 1)[:, None], 1) / best_k[:, None]).astype(np.float16).astype(np.float32)
+                trits[:, col_start:col_end] = np.where(a_b >= thr_b, np.sign(w_b), 0).astype(np.int8)
+                scales[:, b_idx : b_idx + 1] = alpha_b
+        else:
             for b_idx in range(n_blocks):
                 col_start = b_idx * block_size
                 col_end = min(col_start + block_size, n)
                 w_b = W[:, col_start:col_end]
-                scale_b = _compute_scale(w_b, scale_method if scale_method != "ls_optimal" else "optimal", axis=1, keepdims=True)
+                scale_b = _compute_scale(w_b, scale_method, axis=1, keepdims=True)
                 scales[:, b_idx : b_idx + 1] = scale_b
 
                 scaled_b = w_b / scale_b

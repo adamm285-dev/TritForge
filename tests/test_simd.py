@@ -7,10 +7,29 @@ from tritforge.simd import SimdZeroMultiplyKernel
 
 def test_simd_hardware_capabilities():
     caps = SimdZeroMultiplyKernel.get_hardware_capabilities()
-    assert isinstance(caps["has_avx2"], bool)
-    assert isinstance(caps["has_avx512f"], bool)
-    assert caps["vector_width_bits"] in (128, 256, 512)
-    assert isinstance(caps["l3_cache_bytes"], int)
+    if caps["simd_available"] is not None:
+        assert isinstance(caps["has_avx2"], bool)
+        assert isinstance(caps["has_avx512f"], bool)
+        assert caps["vector_width_bits"] in (128, 256, 512)
+        assert isinstance(caps["l3_cache_bytes"], int)
+        assert isinstance(caps["simd_available"], bool)
+    else:
+        # py-cpuinfo not available / flags None
+        assert caps["has_avx2"] is None
+        assert caps["vector_width_bits"] is None
+        assert caps["simd_available"] is None
+
+
+def test_simd_hardware_capabilities_cpuinfo_missing(monkeypatch):
+    """B5: When py-cpuinfo is missing, capabilities should report None (unknown), not False."""
+    import sys
+    monkeypatch.setitem(sys.modules, "cpuinfo", None)
+    caps = SimdZeroMultiplyKernel.get_hardware_capabilities()
+    assert caps["has_avx2"] is None
+    assert caps["has_avx512f"] is None
+    assert caps["vector_width_bits"] is None
+    assert caps["simd_available"] is None
+
 
 
 def test_simd_lut_decoding_identity():

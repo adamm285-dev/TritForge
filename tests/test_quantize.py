@@ -192,3 +192,31 @@ def test_expert_229_down_proj_ls_optimal_fidelity():
     rel_err = float(np.linalg.norm(w - w_ls) / np.linalg.norm(w))
 
     assert rel_err < 0.45, f"Expected relative error < 0.45, got {rel_err:.4f}"
+
+
+def test_ls_optimal_ragged_block_quantization_b5():
+    """B5: Verify that ls_optimal computes exact optimal scales on ragged trailing blocks."""
+    rng = np.random.default_rng(42)
+    # Shape 4 x 200 with block_size=128 gives block 0 (128 cols) and ragged block 1 (72 cols)
+    W = rng.normal(0, 1, size=(4, 200)).astype(np.float32)
+
+    q = absmax_ternary_quantize(W, scaling_mode="block", scale_method="ls_optimal", block_size=128)
+    assert q.scales.shape == (4, 2)
+    assert q.scale_method == "ls_optimal"
+
+    # Check that block 1 scale is optimal least-squares scale, not heuristic 1.5 * mean(|W|)
+    w_ragged = W[:, 128:200]
+    heuristic_scales = np.mean(np.abs(w_ragged), axis=1) * 1.5
+    actual_ragged_scales = q.scales[:, 1]
+    assert not np.allclose(actual_ragged_scales, heuristic_scales, rtol=1e-3)
+
+    # Brute force check row 0 of ragged block to verify optimality
+    row = w_ragged[0]
+    a = np.abs(row)
+    s = -np.sort(-a)
+    c = np.cumsum(s)
+    ks = np.arange(1, 73, dtype=np.float32)
+    best_k = np.argmax(c * c / ks) + 1
+    expected_alpha = np.float32(np.float16(c[best_k - 1] / best_k))
+    assert np.isclose(actual_ragged_scales[0], expected_alpha, rtol=1e-5)
+

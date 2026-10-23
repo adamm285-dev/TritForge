@@ -21,6 +21,9 @@ accel = [
     "torch>=2.0.0",
     "safetensors>=0.4.0",
 ]
+cpu = [
+    "py-cpuinfo>=9.0.0",
+]
 
 [project.scripts]
 tritforge = "tritforge.cli:main"
