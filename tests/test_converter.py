@@ -763,6 +763,43 @@ def test_overnight_run_requires_experiment_arm_parameters_f():
     assert params["scale_method"].default is inspect.Parameter.empty, "scale_method must have no default"
 
 
+def test_overnight_run_passes_experiment_arms_to_batch_converter(monkeypatch, tmp_path):
+    """Part F (2a): run() passes gatekeeper_dtype and scale_method to BatchConverter without allow_dirty."""
+    from tritforge import overnight
+
+    monkeypatch.setattr(overnight, "preflight", lambda: None)
+
+    recorded_kwargs = {}
+
+    class MockBatchConverter:
+        def __init__(self, *args, **kwargs):
+            recorded_kwargs.update(kwargs)
+
+        def convert_all(self, *args, **kwargs):
+            return {}
+
+    monkeypatch.setattr(overnight, "BatchConverter", MockBatchConverter)
+
+    tmp_in = tmp_path / "in"
+    tmp_out = tmp_path / "out"
+    tmp_in.mkdir()
+
+    overnight.run(
+        input_dir=tmp_in,
+        output_dir=tmp_out,
+        gatekeeper_dtype="bfloat16",
+        scale_method="ls_optimal",
+        max_loops=1,
+    )
+
+    assert recorded_kwargs.get("gatekeeper_dtype") == "bfloat16", "gatekeeper_dtype must be passed unchanged"
+    assert recorded_kwargs.get("scale_method") == "ls_optimal", "scale_method must be passed unchanged"
+    assert "allow_dirty" not in recorded_kwargs or recorded_kwargs.get("allow_dirty") is False, (
+        "run() must not pass allow_dirty=True to BatchConverter"
+    )
+
+
+
 
 
 
