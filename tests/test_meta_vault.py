@@ -9,11 +9,23 @@ VAULT_KEYWORDS = {"DEFAULT_MODEL_DIR", "MASTER_SHARD", "MASTER_DIR", "VAULT_DIR"
 VAULT_REGEX = re.compile(r"AI_Memory_Vault|H:\\", re.IGNORECASE)
 
 
+EXPECTED_VAULT_TESTS = {
+    "test_chain.py::test_two_layer_sequential_forward_chain",
+    "test_chain.py::test_expert_swiglu_output_fidelity_against_fp8_source_i11",
+    "test_converter.py::test_live_master_shard_index",
+    "test_moe.py::test_live_assemble_layer0_moe",
+    "test_quantize.py::test_expert_229_down_proj_ls_optimal_fidelity",
+    "test_slice.py::test_extract_expert_slice_live",
+    "test_stability.py::test_evaluate_routing_trace_real_layer0_router_w2_6",
+}
+
+
 def test_meta_all_vault_referencing_tests_marked():
-    """E4: Meta-test that fails if any test references a vault path without the @pytest.mark.vault marker.
-    Includes direct string literals, module-level vault constants, or skipif condition references."""
+    """E4 & Part F (b-2): Meta-test that fails if any test references a vault path without the @pytest.mark.vault marker,
+    and explicitly pins the exact set of all 7 vault-marked tests by name."""
     tests_dir = Path(__file__).parent
     violations = []
+    vault_marked_tests = set()
 
     for test_file in sorted(tests_dir.glob("test_*.py")):
         if test_file.name == "test_meta_vault.py":
@@ -49,6 +61,9 @@ def test_meta_all_vault_referencing_tests_marked():
                     for d in node.decorator_list
                 )
 
+                if is_marked_vault:
+                    vault_marked_tests.add(f"{test_file.name}::{node.name}")
+
                 # Check body + decorators for vault references
                 full_code = ast.unparse(node)
                 refs_vault = bool(VAULT_REGEX.search(full_code)) or any(
@@ -61,6 +76,15 @@ def test_meta_all_vault_referencing_tests_marked():
     assert not violations, (
         f"Found tests referencing vault paths without @pytest.mark.vault marker:\n"
         + "\n".join(f"  - {v}" for v in violations)
+    )
+
+    # Pin exact set of vault tests
+    assert vault_marked_tests == EXPECTED_VAULT_TESTS, (
+        f"Vault marked tests set mismatch!\n"
+        f"Expected: {sorted(EXPECTED_VAULT_TESTS)}\n"
+        f"Found: {sorted(vault_marked_tests)}\n"
+        f"Missing: {sorted(EXPECTED_VAULT_TESTS - vault_marked_tests)}\n"
+        f"Unexpected: {sorted(vault_marked_tests - EXPECTED_VAULT_TESTS)}"
     )
 
 
