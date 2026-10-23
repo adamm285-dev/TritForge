@@ -281,6 +281,34 @@ class StreamingTritWriter:
 
         return self.file_path.stat().st_size
 
+    def abort(self) -> None:
+        """Aborts container writing on failure without finalizing or creating destination file (D1)."""
+        try:
+            if hasattr(self, "_payload_file") and self._payload_file and not self._payload_file.closed:
+                self._payload_file.close()
+        except Exception:
+            pass
+
+        if hasattr(self, "payload_tmp_path") and self.payload_tmp_path.exists():
+            try:
+                self.payload_tmp_path.unlink()
+            except Exception:
+                pass
+
+        tmp_target = self.file_path.with_name(f"{self.file_path.name}.atomic_tmp")
+        if tmp_target.exists():
+            try:
+                tmp_target.unlink()
+            except Exception:
+                pass
+
+        if self.file_path.exists():
+            try:
+                self.file_path.unlink()
+            except Exception:
+                pass
+
+
 
 def read_trit_header(file_path: Union[str, Path]) -> Tuple[Dict[str, Any], int]:
     """

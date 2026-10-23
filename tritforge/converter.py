@@ -523,15 +523,7 @@ class BatchConverter:
             written_bytes = writer.close()
             out_sha256 = file_sha256(out_file)
         except Exception:
-            try:
-                writer.close()
-            except Exception:
-                pass
-            if writer.payload_tmp_path.exists():
-                try:
-                    writer.payload_tmp_path.unlink()
-                except Exception:
-                    pass
+            writer.abort()
             raise
 
         t1 = time.perf_counter()

@@ -425,6 +425,23 @@ def verify_trit_directory(
             elif manifest_found:
                 manifest_mismatches.append(f"{p.name}: layer {l_idx} found on disk but missing from manifest metrics")
 
+            # Check expert completeness (D1)
+            exp_indices = meta.get("expert_indices")
+            num_experts = meta.get("num_experts")
+            if exp_indices is not None:
+                expected_exp_tensors = 3 * len(exp_indices)
+                actual_exp_tensors = sum(
+                    1 for t_name in tensors.keys() if t_name.startswith("experts.")
+                )
+                if actual_exp_tensors != expected_exp_tensors:
+                    manifest_mismatches.append(
+                        f"{p.name}: incomplete expert tensors ({actual_exp_tensors} found, expected {expected_exp_tensors} for {len(exp_indices)} experts)"
+                    )
+                if num_experts is not None and num_experts != len(exp_indices):
+                    manifest_mismatches.append(
+                        f"{p.name}: num_experts mismatch ({num_experts} in header, {len(exp_indices)} in expert_indices)"
+                    )
+
             containers.append(
                 TritContainerHealth(
                     file_name=p.name,

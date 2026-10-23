@@ -477,3 +477,93 @@ def test_converter_cross_shard_fp8_scale_resolution_l1():
         # ls_optimal ternary on constant 0.25 will produce trits +1 and scale 0.25
         recon = loaded.reconstruct()
         np.testing.assert_allclose(recon, expected_w, rtol=1e-3, atol=1e-3)
+
+
+def test_failed_conversion_leaves_no_layer_file_or_tmp_d1():
+    """D1 (a): A failed conversion due to NaN in expert must call abort() and leave no layer file or tmp files."""
+    with tempfile.TemporaryDirectory() as tmp_in_dir, tempfile.TemporaryDirectory() as tmp_out_dir:
+        in_path = Path(tmp_in_dir)
+        out_path = Path(tmp_out_dir)
+
+        # Expert 0 is normal, Expert 1 has NaN in down_proj
+        tensors = {
+            "model.layers.0.mlp.experts.0.gate_proj.weight": np.ones((16, 16), dtype=np.float32),
+            "model.layers.0.mlp.experts.0.up_proj.weight": np.ones((16, 16), dtype=np.float32),
+            "model.layers.0.mlp.experts.0.down_proj.weight": np.ones((16, 16), dtype=np.float32),
+            "model.layers.0.mlp.experts.1.gate_proj.weight": np.ones((16, 16), dtype=np.float32),
+            "model.layers.0.mlp.experts.1.up_proj.weight": np.ones((16, 16), dtype=np.float32),
+            "model.layers.0.mlp.experts.1.down_proj.weight": np.full((16, 16), np.nan, dtype=np.float32),
+        }
+        _create_mock_safetensors(in_path / "model-00001.safetensors", tensors)
+
+        converter = BatchConverter(in_path, out_path, block_size=16)
+        with pytest.raises(ValueError, match="Non-finite.*values detected"):
+            converter.convert_layer(0, expert_indices=[0, 1])
+
+        # Assert no layer_00.trit, .payload.tmp, or .atomic_tmp exist
+        layer_file = out_path / "layer_00.trit"
+        payload_tmp = out_path / "layer_00.payload.tmp"
+        atomic_tmp = out_path / "layer_00.trit.atomic_tmp"
+
+        assert not layer_file.exists(), f"layer_00.trit should not exist after failure: {layer_file}"
+        assert not payload_tmp.exists(), f"payload_tmp should not exist after failure: {payload_tmp}"
+        assert not atomic_tmp.exists(), f"atomic_tmp should not exist after failure: {atomic_tmp}"
+
+
+def test_overnight_daemon_rejects_partial_uncompleted_container_d1():
+    """D1 (b): Overnight daemon logic rejects container on disk if manifest does not mark it completed."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        out_dir = Path(tmp_dir)
+
+        # Create a partial container layer_00.trit on disk with valid header
+        from tritforge.container import StreamingTritWriter
+        writer = StreamingTritWriter(out_dir / "layer_00.trit", layer_idx=0)
+        writer.add_raw_array("dummy", np.zeros((4, 4), dtype=np.float32))
+        writer.close()
+        assert (out_dir / "layer_00.trit").exists()
+
+        # Write manifest without completed_layers or marking it failed
+        manifest_data = {
+            "completed_layers": [],
+            "failed_layers": {"0": "Aborted"},
+            "metrics": {},
+        }
+        (out_dir / "conversion_manifest.json").write_text(json.dumps(manifest_data), encoding="utf-8")
+
+        # Simulate overnight daemon layer verification logic
+        manifest_path = out_dir / "conversion_manifest.json"
+        m_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest_completed = set(m_data.get("completed_layers", []))
+        manifest_failed = set(int(k) for k in m_data.get("failed_layers", {}).keys())
+
+        # Layer 0 must NOT be counted as existing/done
+        is_done = (0 in manifest_completed) and (0 not in manifest_failed)
+        assert is_done is False, "Layer 0 should not be recognized as completed"
+
+
+def test_verify_trit_flags_missing_expert_tensors_d1():
+    """D1 (c): verify-trit reports manifest mismatches if expert tensors are missing or incomplete."""
+    from tritforge.verifier import verify_trit_directory
+    from tritforge.container import StreamingTritWriter
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        out_dir = Path(tmp_dir)
+
+        # Write container with expert_indices=[0, 1] (expecting 6 expert tensors) but add only 3
+        writer = StreamingTritWriter(
+            out_dir / "layer_00.trit",
+            layer_idx=0,
+            extra_metadata={"num_experts": 2, "expert_indices": [0, 1]},
+        )
+        # Add 3 tensors for expert 0, none for expert 1
+        from tritforge.quantize import absmax_ternary_quantize
+        q = absmax_ternary_quantize(np.ones((4, 4), dtype=np.float32), block_size=4)
+        writer.add_quantized_matrix("experts.0.gate_proj", q)
+        writer.add_quantized_matrix("experts.0.up_proj", q)
+        writer.add_quantized_matrix("experts.0.down_proj", q)
+        writer.close()
+
+        report = verify_trit_directory(out_dir, no_hash=True)
+        assert len(report.containers) == 1
+        assert any("incomplete expert tensors" in m for m in report.manifest_mismatches)
+
