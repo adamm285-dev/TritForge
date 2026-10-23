@@ -42,6 +42,25 @@ def test_absmax_ternary_quantize_invariants(sample_matrix):
             assert 0.0 < qmat.density < 1.0
 
 
+def test_quantized_trit_matrix_invalid_trits_raises_l8():
+    """L-8: Verify that instantiating QuantizedTritMatrix containing trits not in {-1, 0, +1} raises ValueError."""
+    scales = np.ones((2, 2), dtype=np.float32)
+
+    # Valid trits pass
+    valid_trits = np.array([[-1, 0], [1, 0]], dtype=np.int8)
+    QuantizedTritMatrix(valid_trits, scales, scaling_mode="block", original_shape=(2, 2))
+
+    # Invalid: +2
+    invalid_pos = np.array([[-1, 2], [1, 0]], dtype=np.int8)
+    with pytest.raises(ValueError, match="violat.*ternary invariant"):
+        QuantizedTritMatrix(invalid_pos, scales, scaling_mode="block", original_shape=(2, 2))
+
+    # Invalid: -2
+    invalid_neg = np.array([[-2, 0], [1, 0]], dtype=np.int8)
+    with pytest.raises(ValueError, match="violat.*ternary invariant"):
+        QuantizedTritMatrix(invalid_neg, scales, scaling_mode="block", original_shape=(2, 2))
+
+
 def test_dequantization_reconstruction(sample_matrix):
     """Verify that dequantized matrix matches expected shape and scale."""
     qmat = absmax_ternary_quantize(sample_matrix, scaling_mode="block", block_size=64)
