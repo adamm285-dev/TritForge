@@ -165,17 +165,16 @@ def evaluate_quantization(
     norm_hat = float(np.linalg.norm(y_hat_flat))
     output_cos = dot / max(norm_gt * norm_hat, 1e-12)
 
-    # Held-out forward activation evaluation (I-6)
+    # Held-out forward activation evaluation (I-6, B5)
     if X_held_out is not None and Y_held_out is not None:
         Y_ho_hat = X_held_out @ W_hat.T
         ho_diff = Y_held_out - Y_ho_hat
         held_out_drift = float(np.linalg.norm(ho_diff) / max(np.linalg.norm(Y_held_out), 1e-12))
         ho_gt_f = Y_held_out.ravel()
         ho_hat_f = Y_ho_hat.ravel()
-        held_out_cos = float(np.dot(ho_gt_f, ho_hat_f) / max(np.linalg.norm(ho_gt_f) * np.linalg.norm(ho_hat_f), 1e-12))
+        held_out_cosine = float(np.dot(ho_gt_f, ho_hat_f) / max(np.linalg.norm(ho_gt_f) * np.linalg.norm(ho_hat_f), 1e-12))
     else:
-        held_out_drift = rel_drift
-        held_out_cosine = output_cos
+        raise ValueError("Held-out evaluation data (X_held_out, Y_held_out) is required for evaluate_quantization (B5).")
 
     output_mae = float(np.mean(np.abs(drift_diff)))
 
@@ -341,11 +340,11 @@ def log_benchmark_to_evals(
     with open(evals_path, "r", encoding="utf-8") as f:
         content = f.read()
 
-    # Build markdown table of runs with dynamic status and held-out metrics (I-5, I-6)
+    # Build markdown table of runs with dynamic status and held-out metrics (I-5, I-6, B5)
     table_rows = []
     for r in results:
         method_label = f"{r.method_name} ({r.scale_method})"
-        status = "PASS" if r.rel_output_drift < 0.45 and r.compression_ratio_base3 >= 70.0 else "FAIL"
+        status = "PASS" if r.held_out_drift < 0.45 and r.compression_ratio_base3 >= 70.0 else "FAIL"
         table_rows.append(
             f"| `{r.timestamp}` | L{r.layer_idx} E{r.expert_idx} `{r.proj_type}` | {method_label} "
             f"| {r.rel_frobenius_err:.4f} | {r.weight_cosine_sim:.4f} | {r.rel_output_drift:.4f} | {r.held_out_drift:.4f} "

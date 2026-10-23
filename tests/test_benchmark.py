@@ -40,6 +40,24 @@ def test_evaluate_quantization_pipeline():
     w_hat = qmat.reconstruct()
 
     meta = {"layer_idx": 0, "expert_idx": 0, "proj": "test_proj"}
+
+    # Missing held-out evaluation data must raise ValueError (B5)
+    with pytest.raises(ValueError, match="Held-out evaluation data"):
+        evaluate_quantization(
+            W_fp8=W,
+            qmat=qmat,
+            W_hat=w_hat,
+            X=X,
+            H=H,
+            Y_ground_truth=Y_gt,
+            elapsed_s=0.05,
+            meta=meta,
+        )
+
+    # Disjoint held-out dataset (I-6)
+    X_ho = generate_synthetic_activations(n_samples=16, hidden_size=n, seed=999)
+    Y_ho = X_ho @ W.T
+
     result = evaluate_quantization(
         W_fp8=W,
         qmat=qmat,
@@ -49,6 +67,8 @@ def test_evaluate_quantization_pipeline():
         Y_ground_truth=Y_gt,
         elapsed_s=0.05,
         meta=meta,
+        X_held_out=X_ho,
+        Y_held_out=Y_ho,
     )
 
     assert result.layer_idx == 0
@@ -57,4 +77,47 @@ def test_evaluate_quantization_pipeline():
     assert 0.0 < result.rel_frobenius_err < 1.0
     assert 0.0 < result.weight_cosine_sim <= 1.0
     assert 0.0 < result.output_cosine_sim <= 1.0
+    assert 0.0 < result.held_out_drift < 1.0
+    assert 0.0 < result.held_out_cosine <= 1.0
     assert result.compression_ratio_base3 > 70.0
+
+
+def test_benchmark_held_out_disjointness_and_metrics_computation_i6():
+    """I-6: Verify that held-out tokens are disjoint from calibration tokens and held_out metrics differ from in-sample."""
+    m, n = 128, 512
+    rng = np.random.RandomState(42)
+    W = rng.randn(m, n).astype(np.float32) * 0.02
+
+    # In-sample tokens (seed 100) vs Held-out tokens (seed 200)
+    X_cal = generate_synthetic_activations(n_samples=16, hidden_size=n, seed=100)
+    X_ho = generate_synthetic_activations(n_samples=16, hidden_size=n, seed=200)
+
+    # Assert token sets are strictly disjoint
+    assert not np.allclose(X_cal, X_ho)
+    min_dist = np.min(np.linalg.norm(X_cal[:, None, :] - X_ho[None, :, :], axis=-1))
+    assert min_dist > 1.0, f"Token sets overlap or are too close: min_dist={min_dist}"
+
+    H = (X_cal.T @ X_cal) / 16 + 0.01 * np.eye(n, dtype=np.float32)
+    Y_cal = X_cal @ W.T
+    Y_ho = X_ho @ W.T
+
+    qmat = absmax_ternary_quantize(W, scaling_mode="block", block_size=128)
+    w_hat = qmat.reconstruct()
+
+    meta = {"layer_idx": 0, "expert_idx": 0, "proj": "test_proj"}
+    result = evaluate_quantization(
+        W_fp8=W,
+        qmat=qmat,
+        W_hat=w_hat,
+        X=X_cal,
+        H=H,
+        Y_ground_truth=Y_cal,
+        elapsed_s=0.05,
+        meta=meta,
+        X_held_out=X_ho,
+        Y_held_out=Y_ho,
+    )
+
+    # In-sample drift and held-out drift are independently computed and not identical
+    assert result.rel_output_drift != result.held_out_drift
+    assert result.output_cosine_sim != result.held_out_cosine
