@@ -121,3 +121,50 @@ def test_benchmark_held_out_disjointness_and_metrics_computation_i6():
     # In-sample drift and held-out drift are independently computed and not identical
     assert result.rel_output_drift != result.held_out_drift
     assert result.output_cosine_sim != result.held_out_cosine
+
+
+def test_benchmark_pass_fail_uses_held_out_drift_d8a(tmp_path):
+    """D8a: Benchmark PASS/FAIL must be determined by held_out_drift (< 0.45), not rel_output_drift.
+    When in-sample drift passes (< 0.45) but held-out drift fails (>= 0.45), logged status must be FAIL.
+    Fails if benchmark status reverts to rel_output_drift."""
+    from tritforge.benchmark import BenchmarkRunResult, log_benchmark_to_evals
+
+    evals_file = tmp_path / "evals.md"
+    evals_file.write_text("# Test Evals\n", encoding="utf-8")
+
+    # Construct result where in-sample rel_output_drift passes (< 0.45)
+    # but held_out_drift fails (>= 0.45)
+    res = BenchmarkRunResult(
+        timestamp="2026-10-23 12:00:00",
+        layer_idx=0,
+        expert_idx=0,
+        proj_type="gate_proj",
+        matrix_shape=(128, 128),
+        method_name="TritForge Hessian",
+        scale_method="optimal",
+        scaling_mode="block",
+        rel_frobenius_err=0.20,
+        weight_cosine_sim=0.98,
+        hessian_loss=0.01,
+        rel_output_drift=0.30,   # In-sample: PASSes threshold (< 0.45)
+        output_cosine_sim=0.97,
+        held_out_drift=0.55,     # Held-out: FAILS threshold (>= 0.45)
+        held_out_cosine=0.92,
+        output_mae=0.05,
+        density=0.66,
+        fp8_mb=1.0,
+        packed_2bit_mb=0.3,
+        packed_base3_mb=0.2,
+        compression_ratio_base3=80.0,
+        elapsed_time_s=0.05,
+    )
+
+    log_benchmark_to_evals([res], loss_reduction=50.0, evals_path=evals_file)
+
+    logged_content = evals_file.read_text(encoding="utf-8")
+    assert "| FAIL |" in logged_content, (
+        f"Expected '| FAIL |' because held_out_drift (0.55) >= 0.45, "
+        f"even though rel_output_drift (0.30) < 0.45.\nContent:\n{logged_content}"
+    )
+    assert "| PASS |" not in logged_content
+
