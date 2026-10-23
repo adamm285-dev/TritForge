@@ -114,25 +114,32 @@ tok = AutoTokenizer.from_pretrained(str(MODEL))
 if TEXT == "unseen":
     text_dir = Path(os.environ.get("TA_TEXT_DIR", r"C:\AI_Models\twin_eval\unseen_text"))
     sums_file = HERE / "SHA256SUMS.txt"
-    if sums_file.exists():
-        import hashlib
-        expected_sums = {}
-        for line in sums_file.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            parts = line.split()
-            expected_sums[Path(parts[1].lstrip("*")).name] = parts[0]
-        for name in ("ADVERSARIAL_REVIEW_2026-10-23.md", "ADVERSARIAL_REVIEW_WAVE2_2026-10-23.md",
-                     "2026-10-23_review_wave1.md", "tritslack_spec.md"):
-            fp = text_dir / name
-            if not fp.exists():
-                raise FileNotFoundError(f"Required eval text {fp} not found in {text_dir}")
-            actual_sha = hashlib.sha256(fp.read_bytes()).hexdigest()
-            if name in expected_sums and actual_sha != expected_sums[name]:
-                raise ValueError(f"SHA-256 mismatch for {fp}: expected {expected_sums[name]}, got {actual_sha}")
-    sources = [text_dir / n for n in ("ADVERSARIAL_REVIEW_2026-10-23.md", "ADVERSARIAL_REVIEW_WAVE2_2026-10-23.md",
-                                      "2026-10-23_review_wave1.md", "tritslack_spec.md")]
+    if not sums_file.exists():
+        raise FileNotFoundError(f"Required SHA256SUMS.txt not found at {sums_file}")
+    import hashlib
+    expected_sums = {}
+    for line in sums_file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split()
+        expected_sums[Path(parts[1].lstrip("*")).name] = parts[0]
+    required_texts = (
+        "ADVERSARIAL_REVIEW_2026-10-23.md",
+        "ADVERSARIAL_REVIEW_WAVE2_2026-10-23.md",
+        "2026-10-23_review_wave1.md",
+        "tritslack_spec.md",
+    )
+    for name in required_texts:
+        if name not in expected_sums:
+            raise KeyError(f"Required eval text '{name}' is not listed in {sums_file}")
+        fp = text_dir / name
+        if not fp.exists():
+            raise FileNotFoundError(f"Required eval text {fp} not found in {text_dir}")
+        actual_sha = hashlib.sha256(fp.read_bytes()).hexdigest()
+        if actual_sha != expected_sums[name]:
+            raise ValueError(f"SHA-256 mismatch for {fp}: expected {expected_sums[name]}, got {actual_sha}")
+    sources = [text_dir / n for n in required_texts]
 else:
     sources = [MODEL / "README.md", Path(r"C:\Python313\LICENSE.txt"),
                Path(r"C:\Python313\Lib\json\decoder.py"), Path(r"C:\Python313\Lib\textwrap.py")]
