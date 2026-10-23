@@ -7,6 +7,7 @@ from pathlib import Path
 import socket
 import threading
 import time
+import urllib.error
 import urllib.request
 import pytest
 
@@ -46,6 +47,8 @@ def test_server_web_ui(local_server):
         assert "TritForge 1.58b" in html
         assert "Active Experts" in html
         assert "expert-grid" in html
+        assert "Inference Studio (Not Connected)" in html
+        assert "✓ SHA-256 Block Match" not in html
 
 
 def test_server_v1_models(local_server):
@@ -59,8 +62,18 @@ def test_server_v1_models(local_server):
         assert data["data"][0]["id"] == "qwen3.8-2.4t-tritforge"
 
 
-def test_server_v1_chat_completions_sync(local_server):
-    """Verify that POST /v1/chat/completions handles non-streaming requests."""
+def test_server_status(local_server):
+    """Verify that GET /api/status reports model_loaded: false (I-1)."""
+    req = urllib.request.Request(f"{local_server}/api/status")
+    with urllib.request.urlopen(req) as resp:
+        assert resp.status == 200
+        data = json.loads(resp.read().decode("utf-8"))
+        assert data["status"] == "idle"
+        assert data["model_loaded"] is False
+
+
+def test_server_v1_chat_completions_returns_501(local_server):
+    """I-1: Verify that POST /v1/chat/completions returns HTTP 501 Not Implemented."""
     payload = {
         "model": "qwen3.8-2.4t-tritforge",
         "messages": [{"role": "user", "content": "What is TritForge?"}],
@@ -72,56 +85,59 @@ def test_server_v1_chat_completions_sync(local_server):
         data=json.dumps(payload).encode("utf-8"),
         headers={"Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(req) as resp:
-        assert resp.status == 200
-        data = json.loads(resp.read().decode("utf-8"))
-        assert data["object"] == "chat.completion"
-        assert len(data["choices"]) == 1
-        assert "content" in data["choices"][0]["message"]
-        assert len(data["active_experts"]) == 10
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        urllib.request.urlopen(req)
+    assert exc_info.value.code == 501
+    body = json.loads(exc_info.value.read().decode("utf-8"))
+    assert "Inference not implemented for qwen3_5_moe" in body["error"]
 
 
-def test_server_v1_chat_completions_stream(local_server):
-    """Verify that POST /v1/chat/completions handles streaming SSE chunks."""
-    payload = {
-        "model": "qwen3.8-2.4t-tritforge",
-        "messages": [{"role": "user", "content": "Stream response please"}],
-        "stream": True,
-        "max_tokens": 5,
-    }
+def test_server_security_invalid_host(local_server):
+    """S-1: Verify that requests with non-localhost/127.0.0.1 Host headers return 403."""
+    req = urllib.request.Request(
+        f"{local_server}/api/status",
+        headers={"Host": "evil.attacker.com"},
+    )
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        urllib.request.urlopen(req)
+    assert exc_info.value.code == 403
+
+
+def test_server_security_schema_validation(local_server):
+    """S-3: Verify that invalid request bodies or types return HTTP 400."""
+    # 1. Invalid JSON body
     req = urllib.request.Request(
         f"{local_server}/v1/chat/completions",
-        data=json.dumps(payload).encode("utf-8"),
+        data=b"not a json",
         headers={"Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(req) as resp:
-        assert resp.status == 200
-        assert "text/event-stream" in resp.headers.get("Content-Type", "")
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        urllib.request.urlopen(req)
+    assert exc_info.value.code == 400
 
-        valid_chunks = 0
-        has_done = False
-        while True:
-            line = resp.readline().decode("utf-8")
-            if not line:
-                break
-            line = line.strip()
-            if line == "data: [DONE]":
-                has_done = True
-                break
-            if line.startswith("data: "):
-                chunk_data = json.loads(line[6:])
-                assert "choices" in chunk_data
-                assert "delta" in chunk_data["choices"][0]
-                valid_chunks += 1
+    # 2. messages is not a list
+    req = urllib.request.Request(
+        f"{local_server}/v1/chat/completions",
+        data=json.dumps({"messages": "hello"}).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+    )
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        urllib.request.urlopen(req)
+    assert exc_info.value.code == 400
 
-        assert valid_chunks > 0
-        assert has_done
+    # 3. max_tokens is not an int
+    req = urllib.request.Request(
+        f"{local_server}/v1/chat/completions",
+        data=json.dumps({"messages": [], "max_tokens": "infinite"}).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+    )
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        urllib.request.urlopen(req)
+    assert exc_info.value.code == 400
 
 
 def test_server_payload_too_large(local_server):
     """Adversarial test: verify that payloads > 10MB are rejected with HTTP 413."""
-    import urllib.error
-    # Construct a request declaring Content-Length > 10 MB
     req = urllib.request.Request(
         f"{local_server}/v1/chat/completions",
         data=b"{}",

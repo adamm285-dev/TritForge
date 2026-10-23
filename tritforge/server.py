@@ -242,7 +242,7 @@ WEB_UI_HTML = """<!DOCTYPE html>
         <span class="pulse-dot"></span> Live Trination Monitor
       </button>
       <button class="tab-btn" id="tab-btn-chat" onclick="showTab('chat')">
-        💬 Inference Studio
+        💬 Inference Studio (Not Connected)
       </button>
     </div>
 
@@ -470,7 +470,7 @@ WEB_UI_HTML = """<!DOCTYPE html>
         <div class="modal-row"><span>Architecture Block:</span><b>Qwen 2.4T Layer ${layerIdx}</b></div>
         <div class="modal-row"><span>MoE Routed Lanes:</span><b>512 Experts (${isDone ? '100% Quantized' : (isActive ? '~' + latestTrinationData.active_experts_est + '/512 Streamed' : 'Pending')})</b></div>
         <div class="modal-row"><span>Quantization Precision:</span><b>1.58-Bit Base-3 Trits + FP16 Scales</b></div>
-        <div class="modal-row"><span>Gatekeeper Tensors:</span><b>16 High-Precision Tensors (Preserved)</b></div>
+        <div class="modal-row"><span>Gatekeeper Tensors:</span><b>Dense & Gatekeeper Tensors</b></div>
       `;
       
       if (isDone) {
@@ -483,7 +483,7 @@ WEB_UI_HTML = """<!DOCTYPE html>
           <div class="modal-row"><span>RAM Footprint Slashed:</span><b style="color:var(--accent);">92.8% vs FP32 <span style="font-size:0.75rem; color:var(--text-muted);">(86.2% vs FP16)</span></b></div>
           <div class="modal-row"><span>Pacing Duration:</span><b>${duration} minutes</b></div>
           <div class="modal-row"><span>Physical File:</span><code style="font-size:0.75rem; color:var(--text-muted);">layer_${String(layerIdx).padStart(2, '0')}.trit</code></div>
-          <div class="modal-row"><span>Integrity Verification:</span><b style="color:var(--success);">✓ SHA-256 Block Match</b></div>
+          <div class="modal-row"><span>Integrity Status:</span><b>Conversion Layer Stored</b></div>
         `;
       } else if (isActive) {
         content += `
@@ -796,14 +796,19 @@ def get_conversion_status(model_dir: Optional[Path] = None) -> Dict[str, Any]:
     # Format historical ledger in reverse chronological order
     history = []
     for k, v in sorted(layer_metrics.items(), key=lambda x: int(x[0]), reverse=True):
+        in_b = v.get("input_bytes", 0)
+        out_b = v.get("output_bytes", 0)
+        fp8_b = in_b / 4.0
+        fp8_ratio = round((1.0 - out_b / fp8_b) * 100.0, 2) if fp8_b > 0 else 0.0
+        fp32_ratio = round((1.0 - out_b / in_b) * 100.0, 2) if in_b > 0 else 0.0
         history.append({
             "layer_idx": int(k),
             "num_experts": v.get("num_experts", 512),
-            "input_mb": round(v.get("input_bytes", 0) / (1024 ** 2), 1),
-            "output_mb": round(v.get("output_bytes", 0) / (1024 ** 2), 1),
-            "compression_pct": 72.31,
-            "compression_pct_fp8": 72.31,
-            "compression_pct_fp32": round(v.get("compression_ratio_pct", 92.83), 2),
+            "input_mb": round(in_b / (1024 ** 2), 1),
+            "output_mb": round(out_b / (1024 ** 2), 1),
+            "compression_pct": fp8_ratio,
+            "compression_pct_fp8": fp8_ratio,
+            "compression_pct_fp32": fp32_ratio,
             "duration_mins": round(v.get("duration_s", 0) / 60.0, 1),
         })
 
@@ -826,10 +831,10 @@ def get_conversion_status(model_dir: Optional[Path] = None) -> Dict[str, Any]:
         "stats": {
             "total_input_gb": round(total_input_bytes / (1024 ** 3), 2),
             "total_output_gb": round(total_output_bytes / (1024 ** 3), 2),
-            "compression_pct": 72.31,
-            "compression_pct_fp8": 72.31,
-            "compression_pct_fp16": 86.15,
-            "compression_pct_fp32": 92.83,
+            "compression_pct": round((1.0 - total_output_bytes / (total_input_bytes / 4.0)) * 100.0, 2) if total_input_bytes > 0 else 0.0,
+            "compression_pct_fp8": round((1.0 - total_output_bytes / (total_input_bytes / 4.0)) * 100.0, 2) if total_input_bytes > 0 else 0.0,
+            "compression_pct_fp16": round((1.0 - total_output_bytes / (total_input_bytes / 2.0)) * 100.0, 2) if total_input_bytes > 0 else 0.0,
+            "compression_pct_fp32": round((1.0 - total_output_bytes / total_input_bytes) * 100.0, 2) if total_input_bytes > 0 else 0.0,
             "avg_layer_mins": round(avg_duration_s / 60.0, 1),
             "eta_hours": round(eta_hours, 1),
             "eta_formatted": f"{hours_int}h {mins_int}m",
@@ -843,6 +848,7 @@ class ThreadedHTTPServer(socketserver.ThreadingMixIn, HTTPServer):
     daemon_threads = True
     allow_reuse_address = True
     model_dir: Optional[Path] = None
+    timeout = 10.0  # S-2: prevent idle hanging connections
 
 
 class TritForgeAPIHandler(BaseHTTPRequestHandler):
@@ -850,23 +856,42 @@ class TritForgeAPIHandler(BaseHTTPRequestHandler):
 
     # Reference to the loaded model engine
     model_engine: Optional[TritForgeModel] = None
+    timeout = 10.0  # S-2: Socket read/write timeout in seconds
 
     def log_message(self, format: str, *args: Any) -> None:
         """Quiet logging to keep terminal output clean."""
         pass
 
+    def _validate_host(self) -> bool:
+        """S-1: Enforce Host header check to prevent DNS rebinding."""
+        host_header = self.headers.get("Host", "")
+        # Allow localhost or 127.0.0.1 on any port, or empty for testing without Host header
+        if not host_header:
+            return True
+        host_name = host_header.split(":")[0].strip().lower()
+        if host_name in ("localhost", "127.0.0.1"):
+            return True
+        self.send_response(403)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(json.dumps({"error": "Forbidden: invalid Host header"}).encode("utf-8"))
+        return False
+
     def _send_cors_headers(self) -> None:
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        # S-1: Dropped wildcard CORS (*); UI is same-origin
+        pass
 
     def do_OPTIONS(self) -> None:
+        if not self._validate_host():
+            return
         self.send_response(200)
         self._send_cors_headers()
         self.end_headers()
 
     def do_GET(self) -> None:
         """Handle GET requests: Web Studio, /api/conversion/status, /v1/models, /api/status."""
+        if not self._validate_host():
+            return
         path = self.path.split("?")[0]
 
         if path in ("/", "/index.html"):
@@ -906,33 +931,18 @@ class TritForgeAPIHandler(BaseHTTPRequestHandler):
             }
             self.wfile.write(json.dumps(payload).encode("utf-8"))
 
-        elif path == "/api/telemetry/dynamoe":
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self._send_cors_headers()
-            self.end_headers()
-            telemetry = {
-                "router": "dynamoe",
-                "active_k_range": [2, 12],
-                "nominal_k": 10,
-                "tau_mass_threshold": 0.90,
-                "current_avg_k": 3.8,
-                "sparsity_reduction_pct": 62.0,
-                "system_status": "active",
-            }
-            self.wfile.write(json.dumps(telemetry).encode("utf-8"))
-
         elif path == "/api/status":
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self._send_cors_headers()
             self.end_headers()
             status = {
-                "status": "ready",
+                "status": "idle",
                 "model": "Qwen3.8-2.4T-TritForge",
+                "model_loaded": False,
                 "experts_per_layer": 512,
                 "quantization": "Balanced Ternary Base-3 Trits",
-                "hardware_profile": "Hybrid GPU Attention + CPU Zero-Multiply GEMM",
+                "hardware_profile": "Hybrid GPU Attention + CPU GEMM (Float32 Accumulate)",
             }
             self.wfile.write(json.dumps(status).encode("utf-8"))
 
@@ -942,6 +952,9 @@ class TritForgeAPIHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         """Handle POST requests: /v1/chat/completions."""
+        if not self._validate_host():
+            return
+
         if self.path != "/v1/chat/completions":
             self.send_response(404)
             self.end_headers()
@@ -951,18 +964,21 @@ class TritForgeAPIHandler(BaseHTTPRequestHandler):
             content_length = int(self.headers.get("Content-Length", 0))
         except (ValueError, TypeError):
             self.send_response(400)
+            self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps({"error": "Invalid Content-Length header"}).encode("utf-8"))
             return
 
         if content_length > 10 * 1024 * 1024:
             self.send_response(413)
+            self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps({"error": "Payload Too Large: maximum payload is 10 MB"}).encode("utf-8"))
             return
 
         if content_length < 0:
             self.send_response(400)
+            self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps({"error": "Negative Content-Length not allowed"}).encode("utf-8"))
             return
@@ -972,112 +988,52 @@ class TritForgeAPIHandler(BaseHTTPRequestHandler):
             req_data = json.loads(body)
         except Exception as e:
             self.send_response(400)
+            self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps({"error": f"Invalid JSON: {e}"}).encode("utf-8"))
             return
 
-        messages = req_data.get("messages", [])
-        stream = req_data.get("stream", False)
-        max_tokens = req_data.get("max_tokens", req_data.get("max_new_tokens", 20))
-        temperature = req_data.get("temperature", 0.0)
-
-        # Extract user prompt
-        user_prompt = ""
-        for m in messages:
-            if m.get("role") == "user":
-                user_prompt = m.get("content", "")
-
-        # Execute generation through model engine
-        if stream:
-            self.send_response(200)
-            self.send_header("Content-Type", "text/event-stream")
-            self.send_header("Cache-Control", "no-cache")
-            self.send_header("Connection", "keep-alive")
-            self._send_cors_headers()
-            self.end_headers()
-
-            # Stream tokens with disconnect resilience
-            try:
-                for chunk_data in self._generate_stream(user_prompt, max_tokens, temperature):
-                    sse_line = f"data: {json.dumps(chunk_data)}\n\n"
-                    self.wfile.write(sse_line.encode("utf-8"))
-                    self.wfile.flush()
-                self.wfile.write(b"data: [DONE]\n\n")
-                self.wfile.flush()
-            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
-                pass
-            finally:
-                self.close_connection = True
-
-        else:
-            # Non-streaming response
-            full_response, active_experts = self._generate_sync(user_prompt, max_tokens, temperature)
-            self.send_response(200)
+        # S-3: Schema validation before processing
+        if not isinstance(req_data, dict):
+            self.send_response(400)
             self.send_header("Content-Type", "application/json")
-            self._send_cors_headers()
             self.end_headers()
-            payload = {
-                "id": f"chatcmpl-{int(time.time()*1000)}",
-                "object": "chat.completion",
-                "created": int(time.time()),
-                "model": "qwen3.8-2.4t-tritforge",
-                "choices": [
-                    {
-                        "index": 0,
-                        "message": {"role": "assistant", "content": full_response},
-                        "finish_reason": "stop",
-                    }
-                ],
-                "active_experts": active_experts,
-                "usage": {"prompt_tokens": len(user_prompt.split()), "completion_tokens": len(full_response.split()), "total_tokens": len(user_prompt.split()) + len(full_response.split())},
-            }
-            self.wfile.write(json.dumps(payload).encode("utf-8"))
+            self.wfile.write(json.dumps({"error": "Request body must be a JSON object"}).encode("utf-8"))
+            return
 
-    def _generate_stream(
-        self, prompt: str, max_tokens: int, temperature: float
-    ) -> Generator[Dict[str, Any], None, None]:
-        """Generator yielding OpenAI streaming chunks with active expert telemetry."""
-        request_id = f"chatcmpl-{int(time.time()*1000)}"
+        messages = req_data.get("messages")
+        if messages is not None:
+            if not isinstance(messages, list):
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "'messages' must be a list"}).encode("utf-8"))
+                return
+            for m in messages:
+                if not isinstance(m, dict):
+                    self.send_response(400)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": "Each message in 'messages' must be an object"}).encode("utf-8"))
+                    return
 
-        # Simulated or real forward tokens
-        words = [
-            "TritForge", "quantizes", "expert", "lanes", "into", "ternary", "trits",
-            "(-1, 0, +1)", "while", "preserving", "high-precision", "Gatekeeper",
-            "Attention.", "Inference", "executes", "with", "zero", "floating-point",
-            "multiplies", "directly", "in", "workstation", "RAM.",
-        ]
-        num_tokens = min(max_tokens, len(words))
+        max_tokens = req_data.get("max_tokens", req_data.get("max_new_tokens"))
+        if max_tokens is not None and not isinstance(max_tokens, int):
+            self.send_response(400)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "'max_tokens' must be an integer"}).encode("utf-8"))
+            return
 
-        for i in range(num_tokens):
-            word = words[i] + " "
-            # Randomly select 10 active experts out of 512 for visual telemetry
-            np.random.seed(int(time.time() * 1000) % 100000 + i)
-            active_experts = sorted(np.random.choice(512, size=10, replace=False).tolist())
-
-            chunk = {
-                "id": request_id,
-                "object": "chat.completion.chunk",
-                "created": int(time.time()),
-                "model": "qwen3.8-2.4t-tritforge",
-                "choices": [
-                    {
-                        "index": 0,
-                        "delta": {"content": word},
-                        "finish_reason": None if i < num_tokens - 1 else "stop",
-                    }
-                ],
-                "active_experts": active_experts,
-            }
-            time.sleep(0.06)  # Simulated token generation interval (~16 tokens/sec)
-            yield chunk
-
-    def _generate_sync(
-        self, prompt: str, max_tokens: int, temperature: float
-    ) -> Tuple[str, List[int]]:
-        """Synchronous generation returning response text and active expert IDs."""
-        text = "TritForge successfully processed your request using the Asymmetric 1.58-Bit MoE Engine."
-        active = [12, 45, 98, 142, 210, 275, 340, 401, 488, 509]
-        return text, active
+        # I-1: Inference not implemented for qwen3_5_moe until real engine exists
+        self.send_response(501)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(json.dumps({
+            "error": "Inference not implemented for qwen3_5_moe",
+            "code": 501,
+            "type": "not_implemented"
+        }).encode("utf-8"))
 
 
 def run_server(
