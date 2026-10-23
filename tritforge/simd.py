@@ -105,14 +105,27 @@ class SimdZeroMultiplyKernel:
 
     @classmethod
     def get_hardware_capabilities(cls) -> Dict[str, Any]:
-        """Detect and return host CPU SIMD vector extensions."""
-        caps = {
-            "has_avx2": True,
-            "has_avx512f": True,
-            "has_avx512bw": True,
-            "has_avx512vnni": True,
-            "vector_width_bits": 512,
-            "l3_cache_bytes": 96 * 1024 * 1024,  # 96 MB AMD 3D V-Cache
-            "zero_multiply_native": True,
+        """Detect and return host CPU SIMD vector extensions via py-cpuinfo (I-8)."""
+        flags: set[str] = set()
+        l3_bytes = 0
+        try:
+            import cpuinfo
+            info = cpuinfo.get_cpu_info()
+            flags = set(info.get("flags", []))
+            l3_bytes = info.get("l3_cache_size", 0) or 0
+        except Exception:
+            pass
+
+        has_avx512 = "avx512f" in flags
+        has_avx2 = "avx2" in flags
+        vec_width = 512 if has_avx512 else (256 if has_avx2 else 128)
+
+        return {
+            "has_avx2": has_avx2,
+            "has_avx512f": has_avx512,
+            "has_avx512bw": "avx512bw" in flags,
+            "has_avx512vnni": "avx512vnni" in flags,
+            "vector_width_bits": vec_width,
+            "l3_cache_bytes": l3_bytes,
+            "zero_multiply_native": bool(has_avx2 or has_avx512),
         }
-        return caps

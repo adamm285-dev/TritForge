@@ -13,7 +13,7 @@
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.10%2B-brightgreen.svg" alt="Python Version"></a>
   <a href="#"><img src="https://img.shields.io/badge/Dependencies-Pure%20NumPy-orange.svg" alt="Pure NumPy"></a>
   <a href="#"><img src="https://img.shields.io/badge/MoE%20Compression-72.3%25%20Disk%20%7C%2092.8%25%20RAM-success.svg" alt="Compression"></a>
-  <a href="#"><img src="https://img.shields.io/badge/Tests-67%2F67%20Passed-brightgreen.svg" alt="Test Suite"></a>
+  <a href="#"><img src="https://img.shields.io/badge/Tests-82%2F82%20Passed-brightgreen.svg" alt="Test Suite"></a>
 </p>
 
 ---
@@ -29,7 +29,7 @@ By implementing **Asymmetric Mixed-Precision** and **Base-3 Packed Trits** ($\{-
 * **Asymmetric Mixed-Precision**: Preserves the MoE Router and Attention Gatekeepers in high-precision, eliminating catastrophic routing collapse.
 * **Second-Order Error Compensation**: Applies layer-wise activation-calibrated Hessian corrections to all 512 expert lanes per layer, preserving $>90\%$ activation cosine fidelity.
 * **Zero-Multiply GEMM**: Floating-point multiplications are replaced with integer additions, subtractions, and zero-skipping operations.
-* **Native Base-3 Container (`.trit`)**: Packs 5 ternary trits into single 8-bit bytes ($3^5 = 243 \le 256$), achieving an optimal 1.58 bits per parameter.
+* **Native Base-3 Container (`.trit`)**: Packs 5 ternary trits into single 8-bit bytes ($3^5 = 243 \le 256$), achieving 1.725 bits per parameter (1.6 bits packed trits + 0.125 bits FP16 scale per 128 block).
 * **Hybrid Workstation Engine**: Optional PyTorch/CUDA offload for Attention VRAM while streaming ternary experts through CPU RAM.
 * **OpenAI-Compatible Local Server**: Bundled OpenAI v1 API (`/v1/chat/completions`) and a real-time browser dashboard featuring a 92-layer MoE matrix and 512-lane expert telemetry.
 
@@ -55,7 +55,7 @@ Input ─────────┤
 
 1. **The Gatekeeper (Router & Attention):** Maintained in high precision (FP8 / BF16 / FP16). The router never misdirects a token.
 2. **The Lanes (512 Routed Experts):** Quantized to ternary trits ($\{-1, 0, +1\}$) with block-scaled FP16 vectors and second-order Hessian error compensation.
-3. **Exit Drift Compensation:** Even with discrete $\{-1, 0, +1\}$ weights, output projection activations match uncompressed baselines with **90.46% cosine similarity**.
+3. **Exit Drift Compensation:** Evaluated across second-order Hessian compensation and block-optimal scaling methods to reduce activation drift.
 
 ---
 
@@ -64,10 +64,10 @@ Input ─────────┤
 | Metric | Raw Distributed Shards | TritForge `.trit` Native | Savings / Reduction |
 | :--- | :--- | :--- | :--- |
 | **Storage per Layer (512 Experts)** | ~25.3 GB (FP8) | **~7.01 GB (.trit)** | **72.31% Physical Disk Slashed** |
-| **RAM Footprint per Layer** | ~105 GB (FP32) | **~7.01 GB (.trit)** | **92.83% RAM Slashed** |
+| **Storage Footprint per Layer** | ~25.3 GB (FP8 Shards) | **~7.01 GB (.trit)** | **~72.3% Disk Slashed** |
 | **Total 92-Layer Storage** | ~2.33 TB | **~645 GB** | **~1.68 TB Saved** |
 | **Required Spark Nodes** | 24 Cluster Nodes | **1 Workstation** | **95.8% Infrastructure Reduction** |
-| **Arithmetic Operations** | Floating-Point MACs | **Zero-Multiply (+ / -)** | **Zero Silicon Multipliers** |
+| **Arithmetic Operations** | Floating-Point MACs | **Ternary Weights / Float Accum** | **Pure Matrix Add/Sub Ops** |
 
 ---
 
@@ -133,7 +133,7 @@ Open `http://localhost:8000/` in your browser to inspect the **92-Layer MoE Matr
 Empirical validation on live Qwen 2.4T expert slices:
 
 * **Weight Cosine Similarity:** **`0.8995`** (reconstructed trits vs. raw uncompressed weights).
-* **Activation Cosine Fidelity:** **`90.46%`** across dynamic token activation distributions.
+* **Activation Cosine Fidelity:** Evaluated across quantization schemes on held-out token activations.
 * **Sparsity Level:** **`~75.0%`** exact zeros, allowing 3-in-4 zero-skipping optimizations in memory and compute.
 * **Quantization Pacing:** **`~16.8 – 17.5 minutes`** per 512-expert layer on consumer CPUs.
 

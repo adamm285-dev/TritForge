@@ -281,4 +281,4 @@ def test_generation_fidelity_evaluator():
     # Because both models have identical weights here, metrics should be 1.0
     assert np.isclose(metrics.mean_cosine_similarity, 1.0, atol=1e-5)
     assert metrics.top1_agreement_rate == 1.0
-    assert metrics.benchmark_accuracy_retention_score >= 0.90
+    assert metrics.trajectory_blend_score >= 0.90

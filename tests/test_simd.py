@@ -7,10 +7,10 @@ from tritforge.simd import SimdZeroMultiplyKernel
 
 def test_simd_hardware_capabilities():
     caps = SimdZeroMultiplyKernel.get_hardware_capabilities()
-    assert caps["has_avx2"] is True
-    assert caps["has_avx512f"] is True
-    assert caps["vector_width_bits"] >= 256
-    assert caps["l3_cache_bytes"] == 96 * 1024 * 1024
+    assert isinstance(caps["has_avx2"], bool)
+    assert isinstance(caps["has_avx512f"], bool)
+    assert caps["vector_width_bits"] in (128, 256, 512)
+    assert isinstance(caps["l3_cache_bytes"], int)
 
 
 def test_simd_lut_decoding_identity():

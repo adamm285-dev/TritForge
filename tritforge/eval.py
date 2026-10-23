@@ -235,19 +235,24 @@ class GenerationFidelityMetrics:
     mean_kl_divergence: float
     per_step_cosine_similarities: List[float]
     total_tokens_evaluated: int
-    benchmark_accuracy_retention_score: float
+    trajectory_blend_score: float
 
     def to_markdown_table(self) -> str:
+        cos_status = "PASS (>= 0.950)" if self.mean_cosine_similarity >= 0.950 else "FAIL (< 0.950)"
+        top1_status = "PASS (>= 90.0%)" if self.top1_agreement_rate >= 0.90 else "FAIL (< 90.0%)"
+        frob_status = "PASS (< 0.150)" if self.output_frobenius_error < 0.150 else "FAIL (>= 0.150)"
+        kl_status = "PASS (< 0.050)" if self.mean_kl_divergence < 0.050 else "FAIL (>= 0.050)"
+        blend_status = "PASS (>= 90.0%)" if self.trajectory_blend_score >= 0.90 else "FAIL (< 90.0%)"
         lines = [
             "### Generation Fidelity & Trajectory Benchmark",
             "",
             "| Evaluation Metric | Baseline Reference | TritForge 1.58b Asymmetric | Empirical Value | Target Status |",
             "|:---|:---:|:---:|:---:|:---:|",
-            f"| **Trajectory Cosine Similarity** | 1.0000 | 1.58b Packed Lanes | **{self.mean_cosine_similarity:.6f}** | PASS (>= 0.950) |",
-            f"| **Top-1 Token Agreement Rate** | 100.0% | Greedy Trajectory | **{self.top1_agreement_rate * 100.0:.2f}%** | PASS (>= 90.0%) |",
-            f"| **Output Frobenius Drift** | 0.0000 | Exit State Norm | **{self.output_frobenius_error:.6f}** | PASS (< 0.150) |",
-            f"| **Logit KL-Divergence Drift** | 0.0000 | Softmax Output | **{self.mean_kl_divergence:.6f}** | PASS (< 0.050) |",
-            f"| **Benchmark Accuracy Retention** | 100.0% | Retained Capacity | **{self.benchmark_accuracy_retention_score * 100.0:.2f}%** | **VERIFIED (>= 90.0%)** |",
+            f"| **Trajectory Cosine Similarity** | 1.0000 | 1.58b Packed Lanes | **{self.mean_cosine_similarity:.6f}** | {cos_status} |",
+            f"| **Top-1 Token Agreement Rate** | 100.0% | Greedy Trajectory | **{self.top1_agreement_rate * 100.0:.2f}%** | {top1_status} |",
+            f"| **Output Frobenius Drift** | 0.0000 | Exit State Norm | **{self.output_frobenius_error:.6f}** | {frob_status} |",
+            f"| **Logit KL-Divergence Drift** | 0.0000 | Softmax Output | **{self.mean_kl_divergence:.6f}** | {kl_status} |",
+            f"| **Trajectory Blend Score** | 100.0% | Retained Capacity | **{self.trajectory_blend_score * 100.0:.2f}%** | **{blend_status}** |",
         ]
         return "\n".join(lines)
 
@@ -292,7 +297,7 @@ class GenerationFidelityEvaluator:
                 mean_kl_divergence=0.0,
                 per_step_cosine_similarities=[1.0],
                 total_tokens_evaluated=0,
-                benchmark_accuracy_retention_score=1.0,
+                trajectory_blend_score=1.0,
             )
 
         # 1. Top-1 Token Agreement
@@ -350,7 +355,7 @@ class GenerationFidelityEvaluator:
             mean_kl_divergence=mean_kl,
             per_step_cosine_similarities=step_sims,
             total_tokens_evaluated=total_toks,
-            benchmark_accuracy_retention_score=retention,
+            trajectory_blend_score=retention,
         )
 
 

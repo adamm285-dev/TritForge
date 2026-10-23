@@ -118,3 +118,38 @@ def test_two_layer_sequential_forward_chain():
     print(f"\n[CHAIN SUCCESS] Layer 0 Latency: {t_l0:.1f}ms | Layer 1 Latency: {t_l1:.1f}ms")
     print(f" Layer 0 Active Experts ({info0.active_experts}): {list(info0.expert_token_counts.keys())}")
     print(f" Layer 1 Active Experts ({info1.active_experts}): {list(info1.expert_token_counts.keys())}")
+
+
+
+SRC_DIR = Path(r"H:\AI_Memory_Vault\models\Qwen3.8-2.4T-A95B-FP8")
+
+
+@pytest.mark.skipif(not (L0_PATH.exists() and SRC_DIR.exists()), reason="Layer 0 container or FP8 source shards missing on H: drive")
+def test_layer0_expert_quantization_fidelity_against_fp8_source():
+    """I-11: Explicitly verifies that .trit expert weights match FP8 source within bound."""
+    from tritforge.converter import ShardIndex
+    from tritforge.slice import extract_tensor, read_safetensors_header
+
+    idx = ShardIndex(SRC_DIR)
+    t_name = "model.layers.0.mlp.experts.0.gate_proj.weight"
+    assert t_name in idx.tensor_to_shard
+
+    shard_path, t_info, dstart = idx.tensor_to_shard[t_name]
+    h, d = read_safetensors_header(shard_path)
+    scale_name = f"{t_name}_scale_inv"
+    header_subset = {t_name: h[t_name]}
+    if scale_name in idx.tensor_to_shard:
+        header_subset[scale_name] = idx.tensor_to_shard[scale_name][1]
+
+    W_src = extract_tensor(shard_path, t_name, header=header_subset, data_start_offset=d)
+
+    hdr0, offset0 = read_trit_header(L0_PATH)
+    q_trit = load_trit_tensor(L0_PATH, "experts.0.gate_proj", header=hdr0, payload_start_offset=offset0)
+    W_trit = q_trit.reconstruct()
+
+    rel_err = float(np.linalg.norm(W_src - W_trit) / np.linalg.norm(W_src))
+    cos_sim = float(W_src.ravel() @ W_trit.ravel() / (np.linalg.norm(W_src) * np.linalg.norm(W_trit)))
+
+    # Assert that quantized weights have meaningful alignment with source weights
+    assert rel_err < 0.60, f"Excessive relative error against FP8 source: {rel_err:.4f}"
+    assert cos_sim > 0.80, f"Insufficient cosine similarity with FP8 source: {cos_sim:.4f}"

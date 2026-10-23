@@ -66,6 +66,8 @@ class BenchmarkRunResult:
     hessian_loss: float
     rel_output_drift: float
     output_cosine_sim: float
+    held_out_drift: float
+    held_out_cosine: float
     output_mae: float
     density: float
     fp8_mb: float
@@ -117,6 +119,7 @@ def generate_synthetic_activations(
     hidden_size: int,
     seed: int = 42,
 ) -> np.ndarray:
+    # MOCK(M-003): Synthetic gaussian activations generated when raw safetensors shards are unavailable
     """
     Generates synthetic normalized activation inputs X matching transformer token dynamics.
     Shape: (n_samples, hidden_size).
@@ -138,15 +141,18 @@ def evaluate_quantization(
     Y_ground_truth: np.ndarray,
     elapsed_s: float,
     meta: Dict[str, Any],
+    X_held_out: Optional[np.ndarray] = None,
+    Y_held_out: Optional[np.ndarray] = None,
 ) -> BenchmarkRunResult:
     """
-    Computes all validation metrics between original W_fp8 and reconstructed W_hat.
+    Computes all validation metrics between original W_fp8 and reconstructed W_hat
+    across in-sample and disjoint held-out activations (I-6).
     """
     _, rel_frob = compute_frobenius_error(W_fp8, W_hat)
     weight_cos = compute_cosine_similarity(W_fp8, W_hat)
     h_loss = compute_hessian_error(W_fp8, W_hat, H)
 
-    # Forward activation simulation: Y_hat = X @ W_hat^T
+    # In-sample forward activation simulation: Y_hat = X @ W_hat^T
     Y_hat = X @ W_hat.T
     drift_diff = Y_ground_truth - Y_hat
     rel_drift = float(np.linalg.norm(drift_diff) / max(np.linalg.norm(Y_ground_truth), 1e-12))
@@ -157,6 +163,18 @@ def evaluate_quantization(
     norm_gt = float(np.linalg.norm(y_gt_flat))
     norm_hat = float(np.linalg.norm(y_hat_flat))
     output_cos = dot / max(norm_gt * norm_hat, 1e-12)
+
+    # Held-out forward activation evaluation (I-6)
+    if X_held_out is not None and Y_held_out is not None:
+        Y_ho_hat = X_held_out @ W_hat.T
+        ho_diff = Y_held_out - Y_ho_hat
+        held_out_drift = float(np.linalg.norm(ho_diff) / max(np.linalg.norm(Y_held_out), 1e-12))
+        ho_gt_f = Y_held_out.ravel()
+        ho_hat_f = Y_ho_hat.ravel()
+        held_out_cos = float(np.dot(ho_gt_f, ho_hat_f) / max(np.linalg.norm(ho_gt_f) * np.linalg.norm(ho_hat_f), 1e-12))
+    else:
+        held_out_drift = rel_drift
+        held_out_cosine = output_cos
 
     output_mae = float(np.mean(np.abs(drift_diff)))
 
@@ -181,6 +199,8 @@ def evaluate_quantization(
         hessian_loss=h_loss,
         rel_output_drift=rel_drift,
         output_cosine_sim=output_cos,
+        held_out_drift=held_out_drift,
+        held_out_cosine=held_out_cosine,
         output_mae=output_mae,
         density=qmat.density,
         fp8_mb=fp8_mb,
@@ -224,17 +244,24 @@ def run_benchmark_suite(
     m, n = W_fp8.shape
     print(f"[1/4] Extracted slice in {t_extract*1000:.2f}ms: shape={W_fp8.shape}, FP8={slice_obj.raw_fp8_mb:.1f}MB")
 
-    # 2. Setup Real Empirical Calibration Activations and Hessian
+    # 2. Setup Real Empirical Calibration Activations and Hessian (plus disjoint held-out tokens, I-6)
     t0 = time.perf_counter()
     base_dir = Path(safetensors_path).parent
-    X = collect_layer0_empirical_activations(base_dir=base_dir, n_samples=n_samples, seed=42)
+    # In-sample calibration tokens: IDs 100 to 100 + n_samples
+    calib_tids = list(range(100, 100 + n_samples))
+    X = collect_layer0_empirical_activations(base_dir=base_dir, n_samples=n_samples, token_ids=calib_tids, seed=42)
+    # Disjoint held-out tokens: IDs 1000 to 1000 + n_samples
+    held_out_tids = list(range(1000, 1000 + n_samples))
+    X_ho = collect_layer0_empirical_activations(base_dir=base_dir, n_samples=n_samples, token_ids=held_out_tids, seed=999)
+
     # Empirical activation covariance Hessian H = (X^T X)/N + lambda*I
     H = (X.T @ X) / n_samples
     np.fill_diagonal(H, H.diagonal() + 0.01)
     # Ground truth forward activations Y = X @ W^T
     Y_gt = X @ W_fp8.T
+    Y_ho = X_ho @ W_fp8.T
     t_calib = time.perf_counter() - t0
-    print(f"[2/4] Constructed activation covariance & ground truth outputs in {t_calib*1000:.2f}ms (N={n_samples})")
+    print(f"[2/4] Constructed activation covariance & ground truth outputs in {t_calib*1000:.2f}ms (N_calib={n_samples}, N_heldout={n_samples})")
 
     meta = {"layer_idx": layer_idx, "expert_idx": expert_idx, "proj": proj}
     results: List[BenchmarkRunResult] = []
@@ -245,27 +272,27 @@ def run_benchmark_suite(
     q_absmax = absmax_ternary_quantize(W_fp8, scaling_mode="block", scale_method="absmax", block_size=block_size)
     w_absmax = q_absmax.reconstruct()
     t_absmax = time.perf_counter() - t0
-    res_absmax = evaluate_quantization(W_fp8, q_absmax, w_absmax, X, H, Y_gt, t_absmax, meta)
+    res_absmax = evaluate_quantization(W_fp8, q_absmax, w_absmax, X, H, Y_gt, t_absmax, meta, X_ho, Y_ho)
     results.append(res_absmax)
-    print(f"  -> [Naive Absmax]        RelFrob: {res_absmax.rel_frobenius_err:.4f} | WeightCos: {res_absmax.weight_cosine_sim:.4f} | DriftCos: {res_absmax.output_cosine_sim:.4f} | HessianLoss: {res_absmax.hessian_loss:.4f}")
+    print(f"  -> [Naive Absmax]        RelFrob: {res_absmax.rel_frobenius_err:.4f} | WeightCos: {res_absmax.weight_cosine_sim:.4f} | InSampleDrift: {res_absmax.rel_output_drift:.4f} | HeldOutDrift: {res_absmax.held_out_drift:.4f} | HessianLoss: {res_absmax.hessian_loss:.4f}")
 
     # Method B: BitNet Mean-Abs (Block 128)
     t0 = time.perf_counter()
     q_mean = absmax_ternary_quantize(W_fp8, scaling_mode="block", scale_method="mean_abs", block_size=block_size)
     w_mean = q_mean.reconstruct()
     t_mean = time.perf_counter() - t0
-    res_mean = evaluate_quantization(W_fp8, q_mean, w_mean, X, H, Y_gt, t_mean, meta)
+    res_mean = evaluate_quantization(W_fp8, q_mean, w_mean, X, H, Y_gt, t_mean, meta, X_ho, Y_ho)
     results.append(res_mean)
-    print(f"  -> [BitNet Mean-Abs]     RelFrob: {res_mean.rel_frobenius_err:.4f} | WeightCos: {res_mean.weight_cosine_sim:.4f} | DriftCos: {res_mean.output_cosine_sim:.4f} | HessianLoss: {res_mean.hessian_loss:.4f}")
+    print(f"  -> [BitNet Mean-Abs]     RelFrob: {res_mean.rel_frobenius_err:.4f} | WeightCos: {res_mean.weight_cosine_sim:.4f} | InSampleDrift: {res_mean.rel_output_drift:.4f} | HeldOutDrift: {res_mean.held_out_drift:.4f} | HessianLoss: {res_mean.hessian_loss:.4f}")
 
-    # Method C: Optimal Scale (1.5x Mean-Abs, Block 128)
+    # Method C: Optimal Scale (Production Baseline, Block 128)
     t0 = time.perf_counter()
     q_opt = absmax_ternary_quantize(W_fp8, scaling_mode="block", scale_method="optimal", block_size=block_size)
     w_opt = q_opt.reconstruct()
     t_opt = time.perf_counter() - t0
-    res_opt = evaluate_quantization(W_fp8, q_opt, w_opt, X, H, Y_gt, t_opt, meta)
+    res_opt = evaluate_quantization(W_fp8, q_opt, w_opt, X, H, Y_gt, t_opt, meta, X_ho, Y_ho)
     results.append(res_opt)
-    print(f"  -> [Optimal Scale]       RelFrob: {res_opt.rel_frobenius_err:.4f} | WeightCos: {res_opt.weight_cosine_sim:.4f} | DriftCos: {res_opt.output_cosine_sim:.4f} | HessianLoss: {res_opt.hessian_loss:.4f}")
+    print(f"  -> [Optimal Scale]       RelFrob: {res_opt.rel_frobenius_err:.4f} | WeightCos: {res_opt.weight_cosine_sim:.4f} | InSampleDrift: {res_opt.rel_output_drift:.4f} | HeldOutDrift: {res_opt.held_out_drift:.4f} | HessianLoss: {res_opt.hessian_loss:.4f}")
 
     # Method D: TritForge Second-Order Hessian Compensated
     t0 = time.perf_counter()
@@ -277,7 +304,7 @@ def run_benchmark_suite(
         damp=0.01,
     )
     t_hessian = time.perf_counter() - t0
-    res_hessian = evaluate_quantization(W_fp8, q_hessian, w_hessian, X, H, Y_gt, t_hessian, meta)
+    res_hessian = evaluate_quantization(W_fp8, q_hessian, w_hessian, X, H, Y_gt, t_hessian, meta, X_ho, Y_ho)
     results.append(res_hessian)
     print(f"  -> [TritForge Hessian]   RelFrob: {res_hessian.rel_frobenius_err:.4f} | WeightCos: {res_hessian.weight_cosine_sim:.4f} | DriftCos: {res_hessian.output_cosine_sim:.4f} | HessianLoss: {res_hessian.hessian_loss:.4f}")
 
@@ -313,14 +340,15 @@ def log_benchmark_to_evals(
     with open(evals_path, "r", encoding="utf-8") as f:
         content = f.read()
 
-    # Build markdown table of runs
+    # Build markdown table of runs with dynamic status and held-out metrics (I-5, I-6)
     table_rows = []
     for r in results:
         method_label = f"{r.method_name} ({r.scale_method})"
+        status = "PASS" if r.rel_output_drift < 0.45 and r.compression_ratio_base3 >= 70.0 else "FAIL"
         table_rows.append(
             f"| `{r.timestamp}` | L{r.layer_idx} E{r.expert_idx} `{r.proj_type}` | {method_label} "
-            f"| {r.rel_frobenius_err:.4f} | {r.weight_cosine_sim:.4f} | {r.rel_output_drift:.4f} "
-            f"| {r.output_cosine_sim:.4f} | {r.hessian_loss:.4f} | {r.compression_ratio_base3:.1f}% | PASS |"
+            f"| {r.rel_frobenius_err:.4f} | {r.weight_cosine_sim:.4f} | {r.rel_output_drift:.4f} | {r.held_out_drift:.4f} "
+            f"| {r.output_cosine_sim:.4f} | {r.hessian_loss:.4f} | {r.compression_ratio_base3:.1f}% | {status} |"
         )
 
     run_table = "\n".join(table_rows)
@@ -328,8 +356,8 @@ def log_benchmark_to_evals(
     summary_block = f"""
 ### Verified Run: Layer {results[0].layer_idx} Expert {results[0].expert_idx} `{results[0].proj_type}` ({results[0].timestamp})
 
-| Timestamp | Slice / Target | Method | Rel Frobenius Error | Weight Cos Sim | Rel Output Drift | Output Cos Sim | Hessian Loss | Memory Reduction | Status |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| Timestamp | Slice / Target | Method | Rel Frobenius Error | Weight Cos Sim | In-Sample Drift | Held-Out Drift | Output Cos Sim | Hessian Loss | Memory Reduction | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 {run_table}
 
 **Key Findings:**
