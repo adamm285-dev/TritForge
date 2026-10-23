@@ -1,7 +1,7 @@
 # TritForge ⚡
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/adamm_000/TritForge/main/assets/banner.png" alt="TritForge Banner" width="100%" onerror="this.style.display='none'"/>
+  <img src="https://raw.githubusercontent.com/adamm285-dev/TritForge/main/assets/banner.png" alt="TritForge Banner" width="100%" onerror="this.style.display='none'"/>
 </p>
 
 <p align="center">
@@ -49,7 +49,7 @@ Input ─────────┤
                                                          │
                                                          ▼
                                           [ 1.58-Bit Base-3 Trits ]
-                                          (Block-Scaled Ternary Add/Sub Ops)
+                                          (Block-scaled ternary weights, float accumulate)
 ```
 
 1. **The Gatekeeper (Router & Attention):** Maintained in high precision (FP8 / BF16 / FP16) to ensure faithful routing decisions.

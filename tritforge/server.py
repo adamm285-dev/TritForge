@@ -401,7 +401,7 @@ WEB_UI_HTML = """<!DOCTYPE html>
           <div class="telemetry-row"><span>Host Workstation RAM:</span><span id="ram-meter">23.5 GB / 64 GB</span></div>
           <div class="telemetry-row"><span>GPU Attention VRAM:</span><span>~2.4 GB / 12 GB</span></div>
           <div class="telemetry-row"><span>Storage Slashed:</span><span style="color: var(--expert-active);">~72.3% Disk</span></div>
-          <div class="telemetry-row"><span>Arithmetic Ops:</span><span>Zero-Multiply (+/-)</span></div>
+          <div class="telemetry-row"><span>Arithmetic Ops:</span><span>Ternary weights, float32 accumulate</span></div>
           <div class="telemetry-row"><span>Trit Container:</span><span>layer_00.trit (7.01 GB)</span></div>
         </div>
 
@@ -572,7 +572,7 @@ WEB_UI_HTML = """<!DOCTYPE html>
         }
 
         const fp8Savings = data.stats.compression_pct_fp8 || 72.3;
-        const fp32Savings = data.stats.compression_pct_fp32 || 92.8;
+        const fp32Savings = data.stats.compression_pct_fp32 != null ? data.stats.compression_pct_fp32 : "n/a";
         document.getElementById('kpi-savings').innerHTML = fp8Savings + '% <span style="font-size:0.75rem; color:var(--text-muted); font-weight:normal;">vs FP8</span>';
         document.getElementById('kpi-output-gb').innerText = data.stats.total_output_gb + ' GB (.trit) • ' + fp32Savings + '% vs FP32';
         document.getElementById('kpi-eta').innerText = '~' + data.stats.eta_formatted;

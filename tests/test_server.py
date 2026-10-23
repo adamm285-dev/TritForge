@@ -49,6 +49,10 @@ def test_server_web_ui(local_server):
         assert "expert-grid" in html
         assert "Inference Studio (Not Connected)" in html
         assert "✓ SHA-256 Block Match" not in html
+        # D4: Assert HTML contains no "Zero-Multiply" and no "92.8"
+        assert "Zero-Multiply" not in html, "HTML dashboard contains leftover 'Zero-Multiply' claim"
+        assert "92.8" not in html, "HTML dashboard contains leftover '92.8' claim"
+
 
 
 def test_server_v1_models(local_server):
