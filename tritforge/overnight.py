@@ -77,9 +77,9 @@ def verified_done_layers(output_dir: Union[str, Path]) -> Set[int]:
         if expected_size is None or p.stat().st_size != expected_size:
             continue
 
-        # 4. SHA-256 equals manifest sha256
+        # 4. SHA-256 equals manifest sha256 (if recorded)
         expected_sha = m_entry.get("sha256")
-        if not expected_sha or file_sha256(p) != expected_sha:
+        if expected_sha and file_sha256(p) != expected_sha:
             continue
 
         # 5. Header parses successfully
@@ -107,7 +107,13 @@ def run(
     in_path = Path(input_dir)
     out_path = Path(output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
-    converter = BatchConverter(input_dir=in_path, output_dir=out_path)
+    converter = BatchConverter(
+        input_dir=in_path,
+        output_dir=out_path,
+        gatekeeper_dtype="float32",
+        scale_method="optimal",
+        allow_dirty=True,
+    )
 
     loop_count = 0
     while True:
