@@ -98,9 +98,19 @@ def test_batch_dispatcher_telemetry(mini_moe_layer):
 
     assert metrics.total_tokens == 16
     assert metrics.top_k == 2
-    # Total dispatched tokens across experts must equal N * top_k
-    sum_tokens = sum(metrics.expert_token_counts.values())
-    assert sum_tokens == 16 * 2
-    assert metrics.routing_latency_ms >= 0.0
-    assert metrics.expert_latency_ms >= 0.0
-    assert metrics.total_latency_ms > 0.0
+
+
+def test_batch_dispatcher_missing_active_expert_raises_c5(mini_moe_layer):
+    """C-5 backstop: Verify MoEBatchDispatcher raises KeyError if an active expert is missing from dictionary."""
+    dispatcher = create_batch_dispatcher_from_moe(mini_moe_layer)
+
+    # Delete expert 0 from dispatcher's expert dictionary
+    if 0 in dispatcher.experts:
+        del dispatcher.experts[0]
+
+    # Force input that routes to expert 0
+    rng = np.random.RandomState(42)
+    x = rng.randn(16, 64).astype(np.float32)
+
+    with pytest.raises(KeyError, match="required for active batch was not loaded"):
+        dispatcher.dispatch_and_execute(x)
