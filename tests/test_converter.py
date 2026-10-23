@@ -567,3 +567,34 @@ def test_verify_trit_flags_missing_expert_tensors_d1():
         assert len(report.containers) == 1
         assert any("incomplete expert tensors" in m for m in report.manifest_mismatches)
 
+
+def test_converter_rejects_conflicting_scale_method_in_same_folder_d2():
+    """D2: A folder holding a BF16 + 'optimal' container makes a BF16 + 'ls_optimal' converter raise."""
+    with tempfile.TemporaryDirectory() as tmp_in_dir, tempfile.TemporaryDirectory() as tmp_out_dir:
+        in_path = Path(tmp_in_dir)
+        out_path = Path(tmp_out_dir)
+
+        tensors = {
+            "model.layers.0.mlp.gate.weight": np.ones((2, 16), dtype=np.float32),
+            "model.layers.0.mlp.experts.0.gate_proj.weight": np.ones((16, 16), dtype=np.float32),
+            "model.layers.0.mlp.experts.0.up_proj.weight": np.ones((16, 16), dtype=np.float32),
+            "model.layers.0.mlp.experts.0.down_proj.weight": np.ones((16, 16), dtype=np.float32),
+        }
+        _create_mock_safetensors(in_path / "model-00001.safetensors", tensors)
+
+        # Convert layer 0 with BF16 + optimal
+        c_opt = BatchConverter(
+            in_path, out_path, block_size=16,
+            gatekeeper_dtype="bfloat16", scale_method="optimal"
+        )
+        c_opt.convert_all(layers=[0], expert_indices=[0], resume=False)
+        assert (out_path / "layer_00.trit").exists()
+
+        # Attempt to instantiate or run BatchConverter with BF16 + ls_optimal in same out_path
+        with pytest.raises(ValueError, match="scale_method 'optimal'.*conflicts with requested 'ls_optimal'"):
+            BatchConverter(
+                in_path, out_path, block_size=16,
+                gatekeeper_dtype="bfloat16", scale_method="ls_optimal"
+            )
+
+

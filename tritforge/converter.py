@@ -37,7 +37,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple, Un
 
 import numpy as np
 
-from tritforge.container import StreamingTritWriter, save_trit_file, save_trit_layer
+from tritforge.container import StreamingTritWriter, read_trit_header, save_trit_file, save_trit_layer
 from tritforge.moe import Layer0AsymmetricMoE, MoERouter, SharedExpert, TernaryExpert
 from tritforge.quantize import (
     QuantizedTritMatrix,
@@ -283,28 +283,40 @@ class BatchConverter:
         self._validate_existing_containers()
 
     def _validate_existing_containers(self) -> None:
-        """Ensures existing .trit files in output_dir match configured experiment arm."""
+        """Ensures existing .trit files in output_dir match configured experiment arm (D2)."""
         for p in self.output_dir.glob("layer_*.trit"):
             try:
                 meta, _ = read_trit_header(p)
-                # Check gatekeeper dtype from raw arrays if present
-                for t_name, t_info in meta.get("tensors", {}).items():
-                    if t_info.get("type") == "raw_array":
-                        existing_gk = t_info.get("dtype")
-                        if existing_gk and existing_gk != self.gatekeeper_dtype:
-                            raise ValueError(
-                                f"Output directory {self.output_dir} contains container {p.name} with gatekeeper dtype '{existing_gk}', "
-                                f"which conflicts with requested '{self.gatekeeper_dtype}'. Use a separate output folder per experiment arm."
-                            )
-                        break
-                    elif t_info.get("type") == "quantized_trit_matrix":
-                        existing_sm = t_info.get("scale_method")
-                        if existing_sm and existing_sm != self.scale_method:
-                            raise ValueError(
-                                f"Output directory {self.output_dir} contains container {p.name} with scale_method '{existing_sm}', "
-                                f"which conflicts with requested '{self.scale_method}'. Use a separate output folder per experiment arm."
-                            )
-                        break
+                # D2: Check header metadata first, fallback to tensor inspections
+                existing_gk = meta.get("gatekeeper_dtype")
+                existing_sm = meta.get("scale_method")
+
+                tensors = meta.get("tensors", {})
+                if not existing_gk:
+                    for t_name, t_info in tensors.items():
+                        if t_info.get("type") == "raw_array":
+                            existing_gk = t_info.get("dtype")
+                            if existing_gk:
+                                break
+
+                if not existing_sm:
+                    for t_name, t_info in tensors.items():
+                        if t_info.get("type") == "quantized_trit_matrix":
+                            existing_sm = t_info.get("scale_method")
+                            if existing_sm:
+                                break
+
+                if existing_gk and existing_gk != self.gatekeeper_dtype:
+                    raise ValueError(
+                        f"Output directory {self.output_dir} contains container {p.name} with gatekeeper dtype '{existing_gk}', "
+                        f"which conflicts with requested '{self.gatekeeper_dtype}'. Use a separate output folder per experiment arm."
+                    )
+
+                if existing_sm and existing_sm != self.scale_method:
+                    raise ValueError(
+                        f"Output directory {self.output_dir} contains container {p.name} with scale_method '{existing_sm}', "
+                        f"which conflicts with requested '{self.scale_method}'. Use a separate output folder per experiment arm."
+                    )
             except ValueError:
                 raise
             except Exception:
