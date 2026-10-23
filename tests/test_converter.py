@@ -318,7 +318,13 @@ def test_converter_manifest_parameter_mismatch_guard_l6():
         c1 = BatchConverter(in_path, out_path, block_size=16, scale_method="ls_optimal")
         c1.convert_all(layers=[0], expert_indices=[0], resume=True)
 
-        # Attempt to resume with different scale_method
+        # If container file exists, init rejects conflicting container (D2)
+        with pytest.raises(ValueError, match="conflicts with requested 'absmax'"):
+            BatchConverter(in_path, out_path, block_size=16, scale_method="absmax")
+
+        # If container file is removed but manifest remains, manifest check rejects mismatch on resume (L-6)
+        for p in out_path.glob("layer_*.trit"):
+            p.unlink()
         c2 = BatchConverter(in_path, out_path, block_size=16, scale_method="absmax")
         with pytest.raises(ValueError, match="Manifest configuration mismatch for 'scale_method'"):
             c2.convert_all(layers=[0], expert_indices=[0], resume=True)
