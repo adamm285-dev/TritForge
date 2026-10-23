@@ -1,0 +1,1437 @@
+{
+ "summary": {
+  "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+  "eval_tokens": 2044,
+  "seq": 512,
+  "nseq": 4,
+  "perplexity": {
+   "control": 11.911147516788331,
+   "arm1": 16.745003260053554,
+   "arm2": 15.774331537465564,
+   "int4": 12.073258009868393
+  },
+  "routed_expert_bits_per_weight": {
+   "arm1": 1.725,
+   "arm2": 1.725,
+   "int4": 4.125
+  },
+  "perplexity_ratio_vs_control": {
+   "arm1": 1.4058262007461564,
+   "arm2": 1.3243334880398563,
+   "int4": 1.0136099811417476
+  },
+  "top1_agreement_with_control": {
+   "arm1": 0.6883561643835616,
+   "arm2": 0.7054794520547946,
+   "int4": 0.9168297455968689
+  },
+  "mean_kl_control_to_arm_nats": {
+   "arm1": 0.5350786496515143,
+   "arm2": 0.459200849738373,
+   "int4": 0.035187588862476984
+  },
+  "minutes": 25.8
+ },
+ "per_layer": [
+  {
+   "layer": 0,
+   "type": "linear_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.44260111039584826,
+    "up": 0.43962920310409814,
+    "down": 0.548920365763702
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.4391672454247953,
+    "up": 0.4366274788760788,
+    "down": 0.4326727226445802
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.12300984532599364,
+    "up": 0.12092223807628558,
+    "down": 0.11297554885249952
+   },
+   "arm1": {
+    "hidden_rel_err": 0.1633971780538559,
+    "hidden_cos": 0.9876213073730469,
+    "routing_overlap_vs_control": 1.0
+   },
+   "arm2": {
+    "hidden_rel_err": 0.12585453689098358,
+    "hidden_cos": 0.9929608702659607,
+    "routing_overlap_vs_control": 1.0
+   },
+   "int4": {
+    "hidden_rel_err": 0.025677647441625595,
+    "hidden_cos": 1.0003658533096313,
+    "routing_overlap_vs_control": 1.0
+   },
+   "seconds": 39.0
+  },
+  {
+   "layer": 1,
+   "type": "linear_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.4372160912123222,
+    "up": 0.4372351123399554,
+    "down": 0.43846645535014456
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.4343516927952766,
+    "up": 0.43435683605154585,
+    "down": 0.43433210104556247
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.1193409454862962,
+    "up": 0.11927989497786556,
+    "down": 0.119295599881025
+   },
+   "arm1": {
+    "hidden_rel_err": 0.2431194931268692,
+    "hidden_cos": 0.9746359586715698,
+    "routing_overlap_vs_control": 0.8604736328125
+   },
+   "arm2": {
+    "hidden_rel_err": 0.20770268142223358,
+    "hidden_cos": 0.9813302755355835,
+    "routing_overlap_vs_control": 0.902587890625
+   },
+   "int4": {
+    "hidden_rel_err": 0.042332276701927185,
+    "hidden_cos": 0.9997200965881348,
+    "routing_overlap_vs_control": 0.98681640625
+   },
+   "seconds": 38.7
+  },
+  {
+   "layer": 2,
+   "type": "linear_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.43722291875072955,
+    "up": 0.43736990436991163,
+    "down": 0.4368205348710133
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.4343536448292053,
+    "up": 0.4344741690046766,
+    "down": 0.43334028816093506
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.11926642913151751,
+    "up": 0.11929894575430161,
+    "down": 0.11881046179181297
+   },
+   "arm1": {
+    "hidden_rel_err": 0.24890781939029694,
+    "hidden_cos": 0.9748833775520325,
+    "routing_overlap_vs_control": 0.8385009765625
+   },
+   "arm2": {
+    "hidden_rel_err": 0.2170117050409317,
+    "hidden_cos": 0.9806885123252869,
+    "routing_overlap_vs_control": 0.87109375
+   },
+   "int4": {
+    "hidden_rel_err": 0.045614536851644516,
+    "hidden_cos": 0.9995803833007812,
+    "routing_overlap_vs_control": 0.9759521484375
+   },
+   "seconds": 38.2
+  },
+  {
+   "layer": 3,
+   "type": "full_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.4377719679824703,
+    "up": 0.43775848366766945,
+    "down": 0.43738729982319535
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.4348795654893536,
+    "up": 0.4348083366530904,
+    "down": 0.43421923303738924
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.11968481279854255,
+    "up": 0.11952855739458103,
+    "down": 0.11945190346832722
+   },
+   "arm1": {
+    "hidden_rel_err": 0.2908403277397156,
+    "hidden_cos": 0.9631319642066956,
+    "routing_overlap_vs_control": 0.8150634765625
+   },
+   "arm2": {
+    "hidden_rel_err": 0.260893851518631,
+    "hidden_cos": 0.9702098965644836,
+    "routing_overlap_vs_control": 0.84564208984375
+   },
+   "int4": {
+    "hidden_rel_err": 0.059669677168130875,
+    "hidden_cos": 0.9987329244613647,
+    "routing_overlap_vs_control": 0.96435546875
+   },
+   "seconds": 37.5
+  },
+  {
+   "layer": 4,
+   "type": "linear_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.43816816845996187,
+    "up": 0.43772608955837095,
+    "down": 0.43712393969093954
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.4352527956720203,
+    "up": 0.43481762341203717,
+    "down": 0.4342015558449933
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.1199392757506467,
+    "up": 0.11952921629117662,
+    "down": 0.11941019639312449
+   },
+   "arm1": {
+    "hidden_rel_err": 0.3086168169975281,
+    "hidden_cos": 0.956689178943634,
+    "routing_overlap_vs_control": 0.82427978515625
+   },
+   "arm2": {
+    "hidden_rel_err": 0.2824169993400574,
+    "hidden_cos": 0.9638315439224243,
+    "routing_overlap_vs_control": 0.84979248046875
+   },
+   "int4": {
+    "hidden_rel_err": 0.06686168909072876,
+    "hidden_cos": 0.998294472694397,
+    "routing_overlap_vs_control": 0.9664306640625
+   },
+   "seconds": 38.6
+  },
+  {
+   "layer": 5,
+   "type": "linear_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.43814752409712643,
+    "up": 0.43774381247908506,
+    "down": 0.4370370519023527
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.43523350505109276,
+    "up": 0.43483060181584876,
+    "down": 0.43420898549828224
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.11990829949581149,
+    "up": 0.11950892629615342,
+    "down": 0.11941370836072662
+   },
+   "arm1": {
+    "hidden_rel_err": 0.3221600353717804,
+    "hidden_cos": 0.9523388147354126,
+    "routing_overlap_vs_control": 0.80694580078125
+   },
+   "arm2": {
+    "hidden_rel_err": 0.297260046005249,
+    "hidden_cos": 0.9595945477485657,
+    "routing_overlap_vs_control": 0.8275146484375
+   },
+   "int4": {
+    "hidden_rel_err": 0.07194887101650238,
+    "hidden_cos": 0.9979233145713806,
+    "routing_overlap_vs_control": 0.96014404296875
+   },
+   "seconds": 37.9
+  },
+  {
+   "layer": 6,
+   "type": "linear_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.43836181665405594,
+    "up": 0.43809605402042934,
+    "down": 0.4370878003028024
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.43543856654581814,
+    "up": 0.4351608550189334,
+    "down": 0.4342684271222866
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.11998739618743455,
+    "up": 0.11967997673941756,
+    "down": 0.1194623022773625
+   },
+   "arm1": {
+    "hidden_rel_err": 0.302336722612381,
+    "hidden_cos": 0.9581453800201416,
+    "routing_overlap_vs_control": 0.79644775390625
+   },
+   "arm2": {
+    "hidden_rel_err": 0.27945849299430847,
+    "hidden_cos": 0.9643651843070984,
+    "routing_overlap_vs_control": 0.822265625
+   },
+   "int4": {
+    "hidden_rel_err": 0.06843912601470947,
+    "hidden_cos": 0.9981753826141357,
+    "routing_overlap_vs_control": 0.95806884765625
+   },
+   "seconds": 38.2
+  },
+  {
+   "layer": 7,
+   "type": "full_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.4384475947217286,
+    "up": 0.4382938679739759,
+    "down": 0.437155497970146
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.4355254469523687,
+    "up": 0.43532786991721123,
+    "down": 0.4343168914265807
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.12010437498603647,
+    "up": 0.11981461288893802,
+    "down": 0.11949074091906571
+   },
+   "arm1": {
+    "hidden_rel_err": 0.35866349935531616,
+    "hidden_cos": 0.9362335205078125,
+    "routing_overlap_vs_control": 0.77301025390625
+   },
+   "arm2": {
+    "hidden_rel_err": 0.33490872383117676,
+    "hidden_cos": 0.9448860287666321,
+    "routing_overlap_vs_control": 0.79296875
+   },
+   "int4": {
+    "hidden_rel_err": 0.09072744101285934,
+    "hidden_cos": 0.9962828755378723,
+    "routing_overlap_vs_control": 0.94268798828125
+   },
+   "seconds": 37.7
+  },
+  {
+   "layer": 8,
+   "type": "linear_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.4381031330490393,
+    "up": 0.4385425484085656,
+    "down": 0.4370561154665978
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.4352140452179512,
+    "up": 0.43557451069693687,
+    "down": 0.4342124540219421
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.11995404925257766,
+    "up": 0.11997115848946595,
+    "down": 0.11939753479128469
+   },
+   "arm1": {
+    "hidden_rel_err": 0.3786100745201111,
+    "hidden_cos": 0.9274327158927917,
+    "routing_overlap_vs_control": 0.73724365234375
+   },
+   "arm2": {
+    "hidden_rel_err": 0.3557562828063965,
+    "hidden_cos": 0.9364724159240723,
+    "routing_overlap_vs_control": 0.75714111328125
+   },
+   "int4": {
+    "hidden_rel_err": 0.10109078884124756,
+    "hidden_cos": 0.9952856302261353,
+    "routing_overlap_vs_control": 0.93756103515625
+   },
+   "seconds": 37.8
+  },
+  {
+   "layer": 9,
+   "type": "linear_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.43908999032388896,
+    "up": 0.4396220407836919,
+    "down": 0.4378500876312972
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.4361516982038824,
+    "up": 0.43653783457578044,
+    "down": 0.43495751735922344
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.12045713851124291,
+    "up": 0.12052832401563544,
+    "down": 0.11984997440346526
+   },
+   "arm1": {
+    "hidden_rel_err": 0.38556212186813354,
+    "hidden_cos": 0.9240120649337769,
+    "routing_overlap_vs_control": 0.7762451171875
+   },
+   "arm2": {
+    "hidden_rel_err": 0.36434224247932434,
+    "hidden_cos": 0.9326620101928711,
+    "routing_overlap_vs_control": 0.79266357421875
+   },
+   "int4": {
+    "hidden_rel_err": 0.10584507882595062,
+    "hidden_cos": 0.9948350787162781,
+    "routing_overlap_vs_control": 0.94427490234375
+   },
+   "seconds": 38.3
+  },
+  {
+   "layer": 10,
+   "type": "linear_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.4398937139544629,
+    "up": 0.43982653063898675,
+    "down": 0.43793605577899936
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.43688793634035394,
+    "up": 0.4367790620711938,
+    "down": 0.4350730176561232
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.12081111053068538,
+    "up": 0.12064020188202318,
+    "down": 0.11997476009751717
+   },
+   "arm1": {
+    "hidden_rel_err": 0.28566449880599976,
+    "hidden_cos": 0.9602130055427551,
+    "routing_overlap_vs_control": 0.79473876953125
+   },
+   "arm2": {
+    "hidden_rel_err": 0.2702248692512512,
+    "hidden_cos": 0.9647806286811829,
+    "routing_overlap_vs_control": 0.81097412109375
+   },
+   "int4": {
+    "hidden_rel_err": 0.07693241536617279,
+    "hidden_cos": 0.9977285265922546,
+    "routing_overlap_vs_control": 0.9495849609375
+   },
+   "seconds": 37.9
+  },
+  {
+   "layer": 11,
+   "type": "full_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.44010386524617173,
+    "up": 0.4397028183320006,
+    "down": 0.4389315146239031
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.4371041354754874,
+    "up": 0.4366741368592846,
+    "down": 0.4357556945443199
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.12103501389809881,
+    "up": 0.12054139511262146,
+    "down": 0.12032606359194122
+   },
+   "arm1": {
+    "hidden_rel_err": 0.325299471616745,
+    "hidden_cos": 0.9467517137527466,
+    "routing_overlap_vs_control": 0.78759765625
+   },
+   "arm2": {
+    "hidden_rel_err": 0.3090248703956604,
+    "hidden_cos": 0.952324390411377,
+    "routing_overlap_vs_control": 0.80517578125
+   },
+   "int4": {
+    "hidden_rel_err": 0.09157238900661469,
+    "hidden_cos": 0.9964091181755066,
+    "routing_overlap_vs_control": 0.947998046875
+   },
+   "seconds": 37.4
+  },
+  {
+   "layer": 12,
+   "type": "linear_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.44001065497583974,
+    "up": 0.4403418079799017,
+    "down": 0.43761994942905846
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.4370164943842745,
+    "up": 0.437264320491512,
+    "down": 0.43476320595171175
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.12092255876552248,
+    "up": 0.12081478098725225,
+    "down": 0.11972281757686863
+   },
+   "arm1": {
+    "hidden_rel_err": 0.334992378950119,
+    "hidden_cos": 0.9432321786880493,
+    "routing_overlap_vs_control": 0.726318359375
+   },
+   "arm2": {
+    "hidden_rel_err": 0.31832316517829895,
+    "hidden_cos": 0.9491179585456848,
+    "routing_overlap_vs_control": 0.7462158203125
+   },
+   "int4": {
+    "hidden_rel_err": 0.09585170447826385,
+    "hidden_cos": 0.9960099458694458,
+    "routing_overlap_vs_control": 0.93035888671875
+   },
+   "seconds": 38.0
+  },
+  {
+   "layer": 13,
+   "type": "linear_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.44054390678144545,
+    "up": 0.4406910530779643,
+    "down": 0.43806255548049206
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.43751794001030614,
+    "up": 0.43760207272906615,
+    "down": 0.4351655149473044
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.12127113041647175,
+    "up": 0.1210287774992682,
+    "down": 0.11998949736586972
+   },
+   "arm1": {
+    "hidden_rel_err": 0.3614845871925354,
+    "hidden_cos": 0.9331373572349548,
+    "routing_overlap_vs_control": 0.71429443359375
+   },
+   "arm2": {
+    "hidden_rel_err": 0.3436436057090759,
+    "hidden_cos": 0.9399885535240173,
+    "routing_overlap_vs_control": 0.73583984375
+   },
+   "int4": {
+    "hidden_rel_err": 0.10655544698238373,
+    "hidden_cos": 0.9948824644088745,
+    "routing_overlap_vs_control": 0.923583984375
+   },
+   "seconds": 38.2
+  },
+  {
+   "layer": 14,
+   "type": "linear_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.4404371911458498,
+    "up": 0.4404929936943609,
+    "down": 0.43712458427858236
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.4374123259406626,
+    "up": 0.4374128367570539,
+    "down": 0.4342560558065972
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.12107016127829742,
+    "up": 0.12084782034318882,
+    "down": 0.11947894131304222
+   },
+   "arm1": {
+    "hidden_rel_err": 0.3463455140590668,
+    "hidden_cos": 0.9399520754814148,
+    "routing_overlap_vs_control": 0.69915771484375
+   },
+   "arm2": {
+    "hidden_rel_err": 0.32870134711265564,
+    "hidden_cos": 0.9464181661605835,
+    "routing_overlap_vs_control": 0.72100830078125
+   },
+   "int4": {
+    "hidden_rel_err": 0.10110975056886673,
+    "hidden_cos": 0.995486319065094,
+    "routing_overlap_vs_control": 0.91827392578125
+   },
+   "seconds": 38.7
+  },
+  {
+   "layer": 15,
+   "type": "full_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.4408554385152639,
+    "up": 0.4407949625555174,
+    "down": 0.43720397870391736
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.4378048458584513,
+    "up": 0.43769621873277487,
+    "down": 0.4343818034375682
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.12130376472626851,
+    "up": 0.12103899453412484,
+    "down": 0.11949961578655266
+   },
+   "arm1": {
+    "hidden_rel_err": 0.3955822288990021,
+    "hidden_cos": 0.9189717769622803,
+    "routing_overlap_vs_control": 0.7080078125
+   },
+   "arm2": {
+    "hidden_rel_err": 0.3772212862968445,
+    "hidden_cos": 0.9267318248748779,
+    "routing_overlap_vs_control": 0.7269287109375
+   },
+   "int4": {
+    "hidden_rel_err": 0.12660019099712372,
+    "hidden_cos": 0.9924768805503845,
+    "routing_overlap_vs_control": 0.91632080078125
+   },
+   "seconds": 38.3
+  },
+  {
+   "layer": 16,
+   "type": "linear_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.4414395515569266,
+    "up": 0.44154550976897483,
+    "down": 0.4377394614118486
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.43833948130815165,
+    "up": 0.4383901502162672,
+    "down": 0.4348953488148015
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.12158145715150162,
+    "up": 0.12145316740385459,
+    "down": 0.11983922629573014
+   },
+   "arm1": {
+    "hidden_rel_err": 0.40827760100364685,
+    "hidden_cos": 0.9133906960487366,
+    "routing_overlap_vs_control": 0.68853759765625
+   },
+   "arm2": {
+    "hidden_rel_err": 0.39005598425865173,
+    "hidden_cos": 0.9213863015174866,
+    "routing_overlap_vs_control": 0.711181640625
+   },
+   "int4": {
+    "hidden_rel_err": 0.13740167021751404,
+    "hidden_cos": 0.9910444021224976,
+    "routing_overlap_vs_control": 0.91131591796875
+   },
+   "seconds": 38.5
+  },
+  {
+   "layer": 17,
+   "type": "linear_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.44227029317042277,
+    "up": 0.44152302068263666,
+    "down": 0.4376577117591003
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.4391141560372474,
+    "up": 0.43838877188567743,
+    "down": 0.43479972900240255
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.1221328328434981,
+    "up": 0.12147414007128822,
+    "down": 0.1198086509404779
+   },
+   "arm1": {
+    "hidden_rel_err": 0.41724303364753723,
+    "hidden_cos": 0.909345269203186,
+    "routing_overlap_vs_control": 0.691650390625
+   },
+   "arm2": {
+    "hidden_rel_err": 0.3988731801509857,
+    "hidden_cos": 0.9176555871963501,
+    "routing_overlap_vs_control": 0.71746826171875
+   },
+   "int4": {
+    "hidden_rel_err": 0.14482879638671875,
+    "hidden_cos": 0.989990234375,
+    "routing_overlap_vs_control": 0.90863037109375
+   },
+   "seconds": 38.4
+  },
+  {
+   "layer": 18,
+   "type": "linear_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.4419225393766947,
+    "up": 0.4411870644733967,
+    "down": 0.43743604242317474
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.4387943895597216,
+    "up": 0.4380811867156843,
+    "down": 0.43459457296782555
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.12195216400146122,
+    "up": 0.1213259267727387,
+    "down": 0.11966236927562877
+   },
+   "arm1": {
+    "hidden_rel_err": 0.4140625,
+    "hidden_cos": 0.9117717146873474,
+    "routing_overlap_vs_control": 0.68829345703125
+   },
+   "arm2": {
+    "hidden_rel_err": 0.3958016633987427,
+    "hidden_cos": 0.920021116733551,
+    "routing_overlap_vs_control": 0.71136474609375
+   },
+   "int4": {
+    "hidden_rel_err": 0.15186329185962677,
+    "hidden_cos": 0.9889538884162903,
+    "routing_overlap_vs_control": 0.90185546875
+   },
+   "seconds": 38.3
+  },
+  {
+   "layer": 19,
+   "type": "full_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.4422807537199029,
+    "up": 0.44119468944615636,
+    "down": 0.43764500471388584
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.439056423880604,
+    "up": 0.43808495034030276,
+    "down": 0.4348041455634631
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.12225370316959051,
+    "up": 0.1213799297681506,
+    "down": 0.11979363727278211
+   },
+   "arm1": {
+    "hidden_rel_err": 0.447009414434433,
+    "hidden_cos": 0.8949388861656189,
+    "routing_overlap_vs_control": 0.6783447265625
+   },
+   "arm2": {
+    "hidden_rel_err": 0.4284754693508148,
+    "hidden_cos": 0.9040158987045288,
+    "routing_overlap_vs_control": 0.70263671875
+   },
+   "int4": {
+    "hidden_rel_err": 0.17422856390476227,
+    "hidden_cos": 0.9852496981620789,
+    "routing_overlap_vs_control": 0.89544677734375
+   },
+   "seconds": 37.6
+  },
+  {
+   "layer": 20,
+   "type": "linear_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.44034179048399796,
+    "up": 0.4403502984547168,
+    "down": 0.4371946586715559
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.43733324690665343,
+    "up": 0.43731350168327776,
+    "down": 0.43434554319063956
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.12131205589975873,
+    "up": 0.12098825118142313,
+    "down": 0.11948633926670307
+   },
+   "arm1": {
+    "hidden_rel_err": 0.44263914227485657,
+    "hidden_cos": 0.8970969319343567,
+    "routing_overlap_vs_control": 0.62994384765625
+   },
+   "arm2": {
+    "hidden_rel_err": 0.42397353053092957,
+    "hidden_cos": 0.9060885310173035,
+    "routing_overlap_vs_control": 0.6549072265625
+   },
+   "int4": {
+    "hidden_rel_err": 0.17454271018505096,
+    "hidden_cos": 0.9852152466773987,
+    "routing_overlap_vs_control": 0.876708984375
+   },
+   "seconds": 38.3
+  },
+  {
+   "layer": 21,
+   "type": "linear_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.44243262754512036,
+    "up": 0.4415480162734279,
+    "down": 0.43786338293087507
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.43921347325193766,
+    "up": 0.43841205300220254,
+    "down": 0.4349715333792377
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.12249363152805867,
+    "up": 0.12164612495999445,
+    "down": 0.11987590063039688
+   },
+   "arm1": {
+    "hidden_rel_err": 0.43898287415504456,
+    "hidden_cos": 0.8989167809486389,
+    "routing_overlap_vs_control": 0.69720458984375
+   },
+   "arm2": {
+    "hidden_rel_err": 0.42071864008903503,
+    "hidden_cos": 0.9076038002967834,
+    "routing_overlap_vs_control": 0.7177734375
+   },
+   "int4": {
+    "hidden_rel_err": 0.17661842703819275,
+    "hidden_cos": 0.9848567843437195,
+    "routing_overlap_vs_control": 0.9012451171875
+   },
+   "seconds": 38.2
+  },
+  {
+   "layer": 22,
+   "type": "linear_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.4424174936268381,
+    "up": 0.4414620589336362,
+    "down": 0.43842579414375316
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.43917921298205764,
+    "up": 0.43830122352616674,
+    "down": 0.4355326456855837
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.12224430831418472,
+    "up": 0.12143688466025043,
+    "down": 0.12025771338316764
+   },
+   "arm1": {
+    "hidden_rel_err": 0.4124489426612854,
+    "hidden_cos": 0.9118832945823669,
+    "routing_overlap_vs_control": 0.69525146484375
+   },
+   "arm2": {
+    "hidden_rel_err": 0.3970906436443329,
+    "hidden_cos": 0.9186958074569702,
+    "routing_overlap_vs_control": 0.719970703125
+   },
+   "int4": {
+    "hidden_rel_err": 0.18303638696670532,
+    "hidden_cos": 0.9837690591812134,
+    "routing_overlap_vs_control": 0.8995361328125
+   },
+   "seconds": 38.4
+  },
+  {
+   "layer": 23,
+   "type": "full_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.4424885682549939,
+    "up": 0.4415470267969147,
+    "down": 0.4389443285856553
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.43929484671536095,
+    "up": 0.43839437511152424,
+    "down": 0.43577271615153873
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.12235087876800117,
+    "up": 0.12154745972769739,
+    "down": 0.12033575071884087
+   },
+   "arm1": {
+    "hidden_rel_err": 0.45188960433006287,
+    "hidden_cos": 0.8924620151519775,
+    "routing_overlap_vs_control": 0.7032470703125
+   },
+   "arm2": {
+    "hidden_rel_err": 0.43610477447509766,
+    "hidden_cos": 0.9002735018730164,
+    "routing_overlap_vs_control": 0.72247314453125
+   },
+   "int4": {
+    "hidden_rel_err": 0.20250609517097473,
+    "hidden_cos": 0.979935348033905,
+    "routing_overlap_vs_control": 0.9005126953125
+   },
+   "seconds": 37.3
+  },
+  {
+   "layer": 24,
+   "type": "linear_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.44137833492409734,
+    "up": 0.44142213252782947,
+    "down": 0.43777311628436555
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.43828420847959243,
+    "up": 0.4382807559162911,
+    "down": 0.434934501060519
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.12165034174694077,
+    "up": 0.12139272464084622,
+    "down": 0.11982733256896569
+   },
+   "arm1": {
+    "hidden_rel_err": 0.45568153262138367,
+    "hidden_cos": 0.8905274868011475,
+    "routing_overlap_vs_control": 0.67840576171875
+   },
+   "arm2": {
+    "hidden_rel_err": 0.43956878781318665,
+    "hidden_cos": 0.8985911011695862,
+    "routing_overlap_vs_control": 0.70086669921875
+   },
+   "int4": {
+    "hidden_rel_err": 0.20470044016838074,
+    "hidden_cos": 0.9794833064079285,
+    "routing_overlap_vs_control": 0.890625
+   },
+   "seconds": 38.9
+  },
+  {
+   "layer": 25,
+   "type": "linear_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.4420168784800598,
+    "up": 0.44144964446967505,
+    "down": 0.43824236678043305
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.43885682754380906,
+    "up": 0.43831923605952705,
+    "down": 0.43536124066156046
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.12205741071236259,
+    "up": 0.12147354953283498,
+    "down": 0.1201012984254907
+   },
+   "arm1": {
+    "hidden_rel_err": 0.46459832787513733,
+    "hidden_cos": 0.885901153087616,
+    "routing_overlap_vs_control": 0.67926025390625
+   },
+   "arm2": {
+    "hidden_rel_err": 0.4483809173107147,
+    "hidden_cos": 0.8942115306854248,
+    "routing_overlap_vs_control": 0.6993408203125
+   },
+   "int4": {
+    "hidden_rel_err": 0.20961683988571167,
+    "hidden_cos": 0.9784524440765381,
+    "routing_overlap_vs_control": 0.8853759765625
+   },
+   "seconds": 37.7
+  },
+  {
+   "layer": 26,
+   "type": "linear_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.4409528430205919,
+    "up": 0.4405661598487711,
+    "down": 0.43773268805823884
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.4378898495591666,
+    "up": 0.43749239901088344,
+    "down": 0.43487729440163014
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.12136567166428308,
+    "up": 0.12096728055902049,
+    "down": 0.1198591610414632
+   },
+   "arm1": {
+    "hidden_rel_err": 0.4352307617664337,
+    "hidden_cos": 0.9015145897865295,
+    "routing_overlap_vs_control": 0.67608642578125
+   },
+   "arm2": {
+    "hidden_rel_err": 0.41880539059638977,
+    "hidden_cos": 0.9092101454734802,
+    "routing_overlap_vs_control": 0.69647216796875
+   },
+   "int4": {
+    "hidden_rel_err": 0.19094131886959076,
+    "hidden_cos": 0.9822662472724915,
+    "routing_overlap_vs_control": 0.8873291015625
+   },
+   "seconds": 39.2
+  },
+  {
+   "layer": 27,
+   "type": "full_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.4419953031275663,
+    "up": 0.4410133824691419,
+    "down": 0.4376482320162596
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.4387770926366419,
+    "up": 0.43791362845077036,
+    "down": 0.43481115901211564
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.12199067231219603,
+    "up": 0.12128104588498384,
+    "down": 0.11979524631488367
+   },
+   "arm1": {
+    "hidden_rel_err": 0.4526585340499878,
+    "hidden_cos": 0.8920687437057495,
+    "routing_overlap_vs_control": 0.670166015625
+   },
+   "arm2": {
+    "hidden_rel_err": 0.4367055594921112,
+    "hidden_cos": 0.8999896049499512,
+    "routing_overlap_vs_control": 0.69097900390625
+   },
+   "int4": {
+    "hidden_rel_err": 0.20521807670593262,
+    "hidden_cos": 0.9793858528137207,
+    "routing_overlap_vs_control": 0.8804931640625
+   },
+   "seconds": 35.8
+  },
+  {
+   "layer": 28,
+   "type": "linear_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.4417867415910325,
+    "up": 0.4408672252026439,
+    "down": 0.437975597113969
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.43864218373040564,
+    "up": 0.4377912802558968,
+    "down": 0.43512733956656635
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.12196063500683135,
+    "up": 0.1212449048896355,
+    "down": 0.11997616930395069
+   },
+   "arm1": {
+    "hidden_rel_err": 0.4474066495895386,
+    "hidden_cos": 0.894763171672821,
+    "routing_overlap_vs_control": 0.705810546875
+   },
+   "arm2": {
+    "hidden_rel_err": 0.4309135675430298,
+    "hidden_cos": 0.9028152227401733,
+    "routing_overlap_vs_control": 0.72613525390625
+   },
+   "int4": {
+    "hidden_rel_err": 0.19657652080059052,
+    "hidden_cos": 0.9811095595359802,
+    "routing_overlap_vs_control": 0.89654541015625
+   },
+   "seconds": 37.6
+  },
+  {
+   "layer": 29,
+   "type": "linear_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.4432406923527923,
+    "up": 0.4414736203546926,
+    "down": 0.4383667088808831
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.43989494130544343,
+    "up": 0.43835223804081774,
+    "down": 0.4354775503054253
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.12286447443424713,
+    "up": 0.1216496579772458,
+    "down": 0.12022876709035242
+   },
+   "arm1": {
+    "hidden_rel_err": 0.44739118218421936,
+    "hidden_cos": 0.894770085811615,
+    "routing_overlap_vs_control": 0.7042236328125
+   },
+   "arm2": {
+    "hidden_rel_err": 0.4299779236316681,
+    "hidden_cos": 0.9032751321792603,
+    "routing_overlap_vs_control": 0.72662353515625
+   },
+   "int4": {
+    "hidden_rel_err": 0.1923290193080902,
+    "hidden_cos": 0.98194420337677,
+    "routing_overlap_vs_control": 0.8966064453125
+   },
+   "seconds": 36.9
+  },
+  {
+   "layer": 30,
+   "type": "linear_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.4426034563353352,
+    "up": 0.440985928477589,
+    "down": 0.4381066946214904
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.43940908593155636,
+    "up": 0.43791635009167135,
+    "down": 0.4352467668139704
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.12250608426225386,
+    "up": 0.12139730940089448,
+    "down": 0.12008499493283538
+   },
+   "arm1": {
+    "hidden_rel_err": 0.4285494387149811,
+    "hidden_cos": 0.9044697284698486,
+    "routing_overlap_vs_control": 0.7020263671875
+   },
+   "arm2": {
+    "hidden_rel_err": 0.4108559489250183,
+    "hidden_cos": 0.9126293063163757,
+    "routing_overlap_vs_control": 0.71728515625
+   },
+   "int4": {
+    "hidden_rel_err": 0.18107500672340393,
+    "hidden_cos": 0.984055757522583,
+    "routing_overlap_vs_control": 0.8924560546875
+   },
+   "seconds": 37.0
+  },
+  {
+   "layer": 31,
+   "type": "full_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.443515394067077,
+    "up": 0.4412051825707625,
+    "down": 0.4382761277787803
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.44023121592235503,
+    "up": 0.4381245237614526,
+    "down": 0.4353984341159962
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.12320705350924366,
+    "up": 0.12159231851635514,
+    "down": 0.12014536372690582
+   },
+   "arm1": {
+    "hidden_rel_err": 0.48458248376846313,
+    "hidden_cos": 0.8751362562179565,
+    "routing_overlap_vs_control": 0.6854248046875
+   },
+   "arm2": {
+    "hidden_rel_err": 0.46401548385620117,
+    "hidden_cos": 0.8862050175666809,
+    "routing_overlap_vs_control": 0.7093505859375
+   },
+   "int4": {
+    "hidden_rel_err": 0.19994401931762695,
+    "hidden_cos": 0.9803670048713684,
+    "routing_overlap_vs_control": 0.89532470703125
+   },
+   "seconds": 36.2
+  },
+  {
+   "layer": 32,
+   "type": "linear_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.45028877665423983,
+    "up": 0.4445583682277971,
+    "down": 0.4399738558974205
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.446291411742124,
+    "up": 0.4412655150686063,
+    "down": 0.4369393220715701
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.12767985550848687,
+    "up": 0.12384229937554593,
+    "down": 0.12110622836597626
+   },
+   "arm1": {
+    "hidden_rel_err": 0.5039063096046448,
+    "hidden_cos": 0.8643807768821716,
+    "routing_overlap_vs_control": 0.73175048828125
+   },
+   "arm2": {
+    "hidden_rel_err": 0.48103123903274536,
+    "hidden_cos": 0.8772510290145874,
+    "routing_overlap_vs_control": 0.75189208984375
+   },
+   "int4": {
+    "hidden_rel_err": 0.20101545751094818,
+    "hidden_cos": 0.9801374077796936,
+    "routing_overlap_vs_control": 0.9078369140625
+   },
+   "seconds": 36.8
+  },
+  {
+   "layer": 33,
+   "type": "linear_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.4513511265985252,
+    "up": 0.44482582875990057,
+    "down": 0.4415403816558321
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.4474704622158791,
+    "up": 0.44154538604316623,
+    "down": 0.4383290455508795
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.12861302066406044,
+    "up": 0.12411963261636651,
+    "down": 0.1220113693350753
+   },
+   "arm1": {
+    "hidden_rel_err": 0.4937436878681183,
+    "hidden_cos": 0.8700175285339355,
+    "routing_overlap_vs_control": 0.73004150390625
+   },
+   "arm2": {
+    "hidden_rel_err": 0.4696604907512665,
+    "hidden_cos": 0.8832284212112427,
+    "routing_overlap_vs_control": 0.74993896484375
+   },
+   "int4": {
+    "hidden_rel_err": 0.1904536932706833,
+    "hidden_cos": 0.9822230339050293,
+    "routing_overlap_vs_control": 0.91436767578125
+   },
+   "seconds": 37.1
+  },
+  {
+   "layer": 34,
+   "type": "linear_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.44790625383136967,
+    "up": 0.4434433959713981,
+    "down": 0.4411604904650271
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.4440901330369312,
+    "up": 0.4402066703678341,
+    "down": 0.4380660710664401
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.12638992743026584,
+    "up": 0.1231662525661379,
+    "down": 0.12191496986513325
+   },
+   "arm1": {
+    "hidden_rel_err": 0.48895543813705444,
+    "hidden_cos": 0.8739979267120361,
+    "routing_overlap_vs_control": 0.71148681640625
+   },
+   "arm2": {
+    "hidden_rel_err": 0.46170487999916077,
+    "hidden_cos": 0.8883443474769592,
+    "routing_overlap_vs_control": 0.7384033203125
+   },
+   "int4": {
+    "hidden_rel_err": 0.18467704951763153,
+    "hidden_cos": 0.983347475528717,
+    "routing_overlap_vs_control": 0.91693115234375
+   },
+   "seconds": 37.1
+  },
+  {
+   "layer": 35,
+   "type": "full_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.4431728406765355,
+    "up": 0.4406335356733167,
+    "down": 0.4385283851740179
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.4398840807373846,
+    "up": 0.4375869428730271,
+    "down": 0.4356336507740148
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.12335753724984434,
+    "up": 0.12141548327938737,
+    "down": 0.12034041309316759
+   },
+   "arm1": {
+    "hidden_rel_err": 0.5108627080917358,
+    "hidden_cos": 0.8601626753807068,
+    "routing_overlap_vs_control": 0.6585693359375
+   },
+   "arm2": {
+    "hidden_rel_err": 0.4850293695926666,
+    "hidden_cos": 0.8749409317970276,
+    "routing_overlap_vs_control": 0.68743896484375
+   },
+   "int4": {
+    "hidden_rel_err": 0.20056478679180145,
+    "hidden_cos": 0.9801924228668213,
+    "routing_overlap_vs_control": 0.8961181640625
+   },
+   "seconds": 35.8
+  },
+  {
+   "layer": 36,
+   "type": "linear_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.4445095009448629,
+    "up": 0.44138978016663594,
+    "down": 0.4391682256842597
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.4408546730326094,
+    "up": 0.43825571613023007,
+    "down": 0.43621223257213165
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.12434773978873007,
+    "up": 0.12194845734149748,
+    "down": 0.12079775821436405
+   },
+   "arm1": {
+    "hidden_rel_err": 0.5386291742324829,
+    "hidden_cos": 0.8439663052558899,
+    "routing_overlap_vs_control": 0.6680908203125
+   },
+   "arm2": {
+    "hidden_rel_err": 0.5112089514732361,
+    "hidden_cos": 0.8605650663375854,
+    "routing_overlap_vs_control": 0.692626953125
+   },
+   "int4": {
+    "hidden_rel_err": 0.21141909062862396,
+    "hidden_cos": 0.9779543280601501,
+    "routing_overlap_vs_control": 0.89605712890625
+   },
+   "seconds": 36.4
+  },
+  {
+   "layer": 37,
+   "type": "linear_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.44470330576637734,
+    "up": 0.4413573159206322,
+    "down": 0.4398879153056618
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.4411839669273692,
+    "up": 0.4382556146560169,
+    "down": 0.43680322792151094
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.12469241274934051,
+    "up": 0.12206107980633848,
+    "down": 0.12116749904461055
+   },
+   "arm1": {
+    "hidden_rel_err": 0.5424932837486267,
+    "hidden_cos": 0.8418975472450256,
+    "routing_overlap_vs_control": 0.7218017578125
+   },
+   "arm2": {
+    "hidden_rel_err": 0.5140969753265381,
+    "hidden_cos": 0.8590985536575317,
+    "routing_overlap_vs_control": 0.7454833984375
+   },
+   "int4": {
+    "hidden_rel_err": 0.20647674798965454,
+    "hidden_cos": 0.9789705872535706,
+    "routing_overlap_vs_control": 0.91021728515625
+   },
+   "seconds": 36.9
+  },
+  {
+   "layer": 38,
+   "type": "linear_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.44718493409986876,
+    "up": 0.4419333620696653,
+    "down": 0.4404090056003432
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.44332727664986904,
+    "up": 0.4388097264660826,
+    "down": 0.4373927272818559
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.12656395762272407,
+    "up": 0.12255793664930006,
+    "down": 0.12159243674444427
+   },
+   "arm1": {
+    "hidden_rel_err": 0.521174967288971,
+    "hidden_cos": 0.8546090126037598,
+    "routing_overlap_vs_control": 0.72564697265625
+   },
+   "arm2": {
+    "hidden_rel_err": 0.4940647482872009,
+    "hidden_cos": 0.8703489303588867,
+    "routing_overlap_vs_control": 0.7484130859375
+   },
+   "int4": {
+    "hidden_rel_err": 0.1922772079706192,
+    "hidden_cos": 0.9818174839019775,
+    "routing_overlap_vs_control": 0.91644287109375
+   },
+   "seconds": 36.5
+  },
+  {
+   "layer": 39,
+   "type": "full_attention",
+   "arm1_weight_rel_err": {
+    "gate": 0.44603387411964357,
+    "up": 0.44174376832735757,
+    "down": 0.4444025432248544
+   },
+   "arm2_weight_rel_err": {
+    "gate": 0.4424905181291682,
+    "up": 0.4387004499053732,
+    "down": 0.4407499786433069
+   },
+   "int4_weight_rel_err": {
+    "gate": 0.12593024565662064,
+    "up": 0.12276918479135152,
+    "down": 0.12356123188759924
+   },
+   "arm1": {
+    "hidden_rel_err": 0.5256389379501343,
+    "hidden_cos": 0.8518322110176086,
+    "routing_overlap_vs_control": 0.76727294921875
+   },
+   "arm2": {
+    "hidden_rel_err": 0.49047020077705383,
+    "hidden_cos": 0.8719536066055298,
+    "routing_overlap_vs_control": 0.785400390625
+   },
+   "int4": {
+    "hidden_rel_err": 0.16611260175704956,
+    "hidden_cos": 0.9865521192550659,
+    "routing_overlap_vs_control": 0.9283447265625
+   },
+   "seconds": 36.1
+  }
+ ]
+}

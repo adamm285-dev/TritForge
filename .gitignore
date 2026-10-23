@@ -65,6 +65,7 @@ desktop.ini
 *.pth
 *.onnx
 *.ckpt
+*.ckpt.pt
 models/
 data/
 checkpoints/
