@@ -149,21 +149,34 @@ def absmax_ternary_quantize(
         trits = np.zeros((m, n), dtype=np.int8)
 
         if scale_method == "ls_optimal":
-            # Vectorized least-squares optimal block quantization handling ragged last blocks
-            for b_idx in range(n_blocks):
-                col_start = b_idx * block_size
-                col_end = min(col_start + block_size, n)
-                k_cols = col_end - col_start
-                w_b = W[:, col_start:col_end]
-                a_b = np.abs(w_b)
-                s_b = -np.sort(-a_b, axis=1)
-                c_b = np.cumsum(s_b, axis=1)
-                ks = np.arange(1, k_cols + 1, dtype=np.float32)
-                best_k = np.argmax(c_b * c_b / ks, axis=1) + 1  # (m,)
-                thr_b = np.take_along_axis(s_b, (best_k - 1)[:, None], 1)  # (m, 1)
-                alpha_b = (np.take_along_axis(c_b, (best_k - 1)[:, None], 1) / best_k[:, None]).astype(np.float16).astype(np.float32)
-                trits[:, col_start:col_end] = np.where(a_b >= thr_b, np.sign(w_b), 0).astype(np.int8)
-                scales[:, b_idx : b_idx + 1] = alpha_b
+            # D6: Vectorize all full blocks at once (tensor 3D batching), loop only for ragged remainder
+            bs = block_size
+            n_full = (n // bs) * bs
+            if n_full > 0:
+                full_blocks = W[:, :n_full].reshape(m, n_full // bs, bs)
+                a = np.abs(full_blocks)
+                s = -np.sort(-a, axis=2)
+                c = np.cumsum(s, axis=2)
+                ks = np.arange(1, bs + 1, dtype=np.float32)
+                k = np.argmax(c * c / ks, axis=2) + 1  # (m, n_full // bs)
+                thr = np.take_along_axis(s, (k - 1)[..., None], 2)  # (m, n_full // bs, 1)
+                alpha = (np.take_along_axis(c, (k - 1)[..., None], 2) / k[..., None]).astype(np.float16).astype(np.float32)
+                trits[:, :n_full] = np.where(a >= thr, np.sign(full_blocks), 0).astype(np.int8).reshape(m, n_full)
+                scales[:, :n_full // bs] = alpha.reshape(m, n_full // bs)
+
+            if n > n_full:
+                # Ragged trailing block
+                k_cols = n - n_full
+                w_rem = W[:, n_full:]
+                a_rem = np.abs(w_rem)
+                s_rem = -np.sort(-a_rem, axis=1)
+                c_rem = np.cumsum(s_rem, axis=1)
+                ks_rem = np.arange(1, k_cols + 1, dtype=np.float32)
+                best_k = np.argmax(c_rem * c_rem / ks_rem, axis=1) + 1  # (m,)
+                thr_rem = np.take_along_axis(s_rem, (best_k - 1)[:, None], 1)  # (m, 1)
+                alpha_rem = (np.take_along_axis(c_rem, (best_k - 1)[:, None], 1) / best_k[:, None]).astype(np.float16).astype(np.float32)
+                trits[:, n_full:] = np.where(a_rem >= thr_rem, np.sign(w_rem), 0).astype(np.int8)
+                scales[:, -1:] = alpha_rem
         else:
             for b_idx in range(n_blocks):
                 col_start = b_idx * block_size

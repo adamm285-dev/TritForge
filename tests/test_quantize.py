@@ -220,3 +220,41 @@ def test_ls_optimal_ragged_block_quantization_b5():
     expected_alpha = np.float32(np.float16(c[best_k - 1] / best_k))
     assert np.isclose(actual_ragged_scales[0], expected_alpha, rtol=1e-5)
 
+
+def test_revectorized_ls_optimal_identity_on_heavy_tailed_and_ragged_d6():
+    """D6: Vectorized full blocks + ragged remainder produces bit-identical output
+    compared to the reference per-block implementation on Student-t (df=2) heavy-tailed data."""
+    rng = np.random.default_rng(2026)
+    # Shape 8 x 350 with block_size=128 (2 full blocks = 256 cols, 1 ragged block = 94 cols)
+    # Student-t with df=2 generates heavy tails and extreme outliers
+    W = rng.standard_t(df=2, size=(8, 350)).astype(np.float32)
+
+    # Reference per-block computation
+    m, n = W.shape
+    bs = 128
+    n_blocks = int(np.ceil(n / bs))
+    ref_scales = np.zeros((m, n_blocks), dtype=np.float32)
+    ref_trits = np.zeros((m, n), dtype=np.int8)
+
+    for b_idx in range(n_blocks):
+        c_start = b_idx * bs
+        c_end = min(c_start + bs, n)
+        k_cols = c_end - c_start
+        w_b = W[:, c_start:c_end]
+        a_b = np.abs(w_b)
+        s_b = -np.sort(-a_b, axis=1)
+        c_b = np.cumsum(s_b, axis=1)
+        ks = np.arange(1, k_cols + 1, dtype=np.float32)
+        best_k = np.argmax(c_b * c_b / ks, axis=1) + 1
+        thr_b = np.take_along_axis(s_b, (best_k - 1)[:, None], 1)
+        alpha_b = (np.take_along_axis(c_b, (best_k - 1)[:, None], 1) / best_k[:, None]).astype(np.float16).astype(np.float32)
+        ref_trits[:, c_start:c_end] = np.where(a_b >= thr_b, np.sign(w_b), 0).astype(np.int8)
+        ref_scales[:, b_idx : b_idx + 1] = alpha_b
+
+    # Fast revectorized kernel under test
+    q = absmax_ternary_quantize(W, scaling_mode="block", scale_method="ls_optimal", block_size=bs)
+
+    np.testing.assert_array_equal(q.trits, ref_trits)
+    np.testing.assert_allclose(q.scales, ref_scales, rtol=1e-5, atol=1e-6)
+
+
