@@ -517,35 +517,60 @@ def test_failed_conversion_leaves_no_layer_file_or_tmp_d1():
         assert not atomic_tmp.exists(), f"atomic_tmp should not exist after failure: {atomic_tmp}"
 
 
-def test_overnight_daemon_rejects_partial_uncompleted_container_d1():
-    """D1 (b): Overnight daemon logic rejects container on disk if manifest does not mark it completed."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        out_dir = Path(tmp_dir)
+def test_verified_done_layers_criteria_e2(tmp_path):
+    """E2: Tests verified_done_layers on:
+      a) header-valid container not in completed_layers: not done
+      b) in completed_layers and in failed_layers: not done
+      c) size mismatch: not done
+      d) sha256 mismatch (same size, one byte changed): not done
+      e) fully consistent layer: done (positive control)."""
+    from tritforge.overnight import verified_done_layers
+    from tritforge.container import StreamingTritWriter
+    from tritforge.converter import file_sha256
 
-        # Create a partial container layer_00.trit on disk with valid header
-        from tritforge.container import StreamingTritWriter
-        writer = StreamingTritWriter(out_dir / "layer_00.trit", layer_idx=0)
-        writer.add_raw_array("dummy", np.zeros((4, 4), dtype=np.float32))
-        writer.close()
-        assert (out_dir / "layer_00.trit").exists()
+    # Create 5 test containers using StreamingTritWriter
+    # layer 0: valid, will be fully consistent (e)
+    # layer 1: valid, will NOT be in completed_layers (a)
+    # layer 2: valid, will be in completed_layers AND failed_layers (b)
+    # layer 3: valid, will have size mismatch (c)
+    # layer 4: valid, will have SHA-256 mismatch (d)
+    for l_idx in range(5):
+        w = StreamingTritWriter(tmp_path / f"layer_0{l_idx}.trit", layer_idx=l_idx)
+        w.add_raw_array("data", np.ones((8, 8), dtype=np.float32) * (l_idx + 1))
+        w.close()
 
-        # Write manifest without completed_layers or marking it failed
-        manifest_data = {
-            "completed_layers": [],
-            "failed_layers": {"0": "Aborted"},
-            "metrics": {},
-        }
-        (out_dir / "conversion_manifest.json").write_text(json.dumps(manifest_data), encoding="utf-8")
+    # Precompute hashes and sizes
+    sizes = {l_idx: (tmp_path / f"layer_0{l_idx}.trit").stat().st_size for l_idx in range(5)}
+    shas = {l_idx: file_sha256(tmp_path / f"layer_0{l_idx}.trit") for l_idx in range(5)}
 
-        # Simulate overnight daemon layer verification logic
-        manifest_path = out_dir / "conversion_manifest.json"
-        m_data = json.loads(manifest_path.read_text(encoding="utf-8"))
-        manifest_completed = set(m_data.get("completed_layers", []))
-        manifest_failed = set(int(k) for k in m_data.get("failed_layers", {}).keys())
+    # Modify layer 4 on disk by altering one byte in place to create SHA-256 mismatch with same size
+    with open(tmp_path / "layer_04.trit", "r+b") as f:
+        # Seek near end of file, read byte, flip it
+        f.seek(sizes[4] - 10)
+        orig_byte = f.read(1)
+        flipped_byte = bytes([(orig_byte[0] ^ 0xFF)])
+        f.seek(sizes[4] - 10)
+        f.write(flipped_byte)
+    assert (tmp_path / "layer_04.trit").stat().st_size == sizes[4]
+    assert file_sha256(tmp_path / "layer_04.trit") != shas[4]
 
-        # Layer 0 must NOT be counted as existing/done
-        is_done = (0 in manifest_completed) and (0 not in manifest_failed)
-        assert is_done is False, "Layer 0 should not be recognized as completed"
+    # Build manifest
+    manifest_data = {
+        "completed_layers": [0, 2, 3, 4],  # layer 1 omitted (case a)
+        "failed_layers": {"2": "Synthetic failure"},  # layer 2 failed (case b)
+        "metrics": {
+            "0": {"output_bytes": sizes[0], "sha256": shas[0]},  # case e: fully consistent
+            "1": {"output_bytes": sizes[1], "sha256": shas[1]},  # case a: not in completed_layers
+            "2": {"output_bytes": sizes[2], "sha256": shas[2]},  # case b: in failed_layers
+            "3": {"output_bytes": sizes[3] + 128, "sha256": shas[3]},  # case c: size mismatch
+            "4": {"output_bytes": sizes[4], "sha256": shas[4]},  # case d: sha mismatch
+        },
+    }
+    (tmp_path / "conversion_manifest.json").write_text(json.dumps(manifest_data), encoding="utf-8")
+
+    done = verified_done_layers(tmp_path)
+    assert done == {0}, f"Expected only layer 0 to be verified done, got {done}"
+
 
 
 def test_verify_trit_flags_missing_expert_tensors_d1():
