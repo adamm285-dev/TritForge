@@ -86,6 +86,8 @@ def handle_convert(args: argparse.Namespace) -> int:
         output_dir=output_dir,
         packing_mode=args.packing,
         block_size=args.block_size,
+        scale_method=args.scale_method,
+        gatekeeper_dtype=args.gatekeeper_dtype,
     )
 
     def progress_callback(info: dict) -> None:
@@ -230,7 +232,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # 1. convert
     p_conv = subparsers.add_parser("convert", help="Convert raw Safetensors shards into .trit container format")
-    p_conv.add_argument("--input-dir", "-i", type=str, default=str(DEFAULT_MODEL_DIR),
+    p_conv.add_argument("--input-dir", "-i", "-m", dest="input_dir", type=str, default=str(DEFAULT_MODEL_DIR),
                         help=f"Input directory with .safetensors shards (default: {DEFAULT_MODEL_DIR})")
     p_conv.add_argument("--output-dir", "-o", type=str, required=True,
                         help="Output directory to save .trit containers")
@@ -242,6 +244,10 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Trit packing scheme: 'base3' (1.6 b/w, default) or '2bit' (2.0 b/w)")
     p_conv.add_argument("--block-size", "-b", type=int, default=128,
                         help="Block size for quantization and scales (default: 128)")
+    p_conv.add_argument("--scale-method", choices=["absmax", "mean_abs", "optimal", "ls_optimal"], default="ls_optimal",
+                        help="Scale computation method (default: ls_optimal)")
+    p_conv.add_argument("--gatekeeper-dtype", choices=["float32", "bfloat16", "float16"], default="bfloat16",
+                        help="Storage dtype for non-quantized gatekeeper tensors (default: bfloat16)")
     p_conv.add_argument("--no-resume", action="store_true",
                         help="Disable resuming from existing conversion_manifest.json")
 
