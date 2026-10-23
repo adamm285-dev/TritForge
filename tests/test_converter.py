@@ -623,14 +623,37 @@ def test_converter_dirty_tree_guard_raises_and_allow_dirty_bypasses_d3(monkeypat
         assert c.allow_dirty is True
 
 
-def test_convert_overnight_dirty_tree_exits_nonzero_d3(monkeypatch):
-    """D3: convert_overnight main() exits non-zero when the working tree is dirty."""
-    import convert_overnight
-    monkeypatch.setattr(convert_overnight, "check_git_dirty", lambda: True)
+def test_overnight_preflight_dirty_tree_exits_nonzero_e3(monkeypatch):
+    """E3: tritforge.overnight.preflight() exits non-zero when check_git_dirty returns True."""
+    from tritforge import overnight
+    monkeypatch.setattr(overnight, "check_git_dirty", lambda: True)
 
     with pytest.raises(SystemExit) as exc_info:
-        convert_overnight.main()
+        overnight.preflight()
     assert exc_info.value.code != 0
+
+
+def test_overnight_run_calls_preflight_first_e3(monkeypatch, tmp_path):
+    """E3: tritforge.overnight.run() calls preflight() before anything else.
+    When preflight is patched to raise a sentinel exception, run() raises it and leaves tmp_out empty.
+    time.sleep is patched to raise so regressions fail fast."""
+    from tritforge import overnight
+
+    class PreflightSentinel(Exception):
+        pass
+
+    monkeypatch.setattr(overnight, "preflight", lambda: (_ for _ in ()).throw(PreflightSentinel("preflight called")))
+    monkeypatch.setattr(overnight.time, "sleep", lambda s: (_ for _ in ()).throw(RuntimeError("Regression: overnight looped")))
+
+    tmp_in = tmp_path / "in"
+    tmp_out = tmp_path / "out"
+    tmp_in.mkdir()
+
+    with pytest.raises(PreflightSentinel, match="preflight called"):
+        overnight.run(tmp_in, tmp_out, total_layers=1)
+
+    assert not tmp_out.exists() or list(tmp_out.iterdir()) == []
+
 
 
 
