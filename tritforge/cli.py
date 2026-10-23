@@ -292,6 +292,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_ver.add_argument("--workers", "-w", type=int, default=4,
                        help="Worker threads for parallel scanning (default: 4)")
 
+    # 5b. verify-trit
+    p_vtrit = subparsers.add_parser("verify-trit", help="Read-only verification of converted .trit container directory against manifest (W2-11 + L-4)")
+    p_vtrit.add_argument("--dir", "-d", type=str, required=True,
+                         help="Directory containing layer_*.trit container files")
+    p_vtrit.add_argument("--no-hash", action="store_true",
+                         help="Skip full file SHA-256 calculation (headers, sizes, and metadata only)")
+
     # 6. serve
     p_srv = subparsers.add_parser("serve", help="Launch OpenAI-compatible local API server and Web Chat UI")
     p_srv.add_argument("--host", type=str, default="127.0.0.1",
@@ -302,6 +309,14 @@ def build_parser() -> argparse.ArgumentParser:
                        help="Directory containing .trit container files")
 
     return parser
+
+
+def handle_verify_trit(args: argparse.Namespace) -> int:
+    """Handles 'tritforge verify-trit' subcommand (W2-11 + L-4)."""
+    from tritforge.verifier import verify_trit_directory
+    report = verify_trit_directory(args.dir, no_hash=args.no_hash)
+    print(report.render_markdown())
+    return 0 if not report.manifest_mismatches else 1
 
 
 def handle_serve(args: argparse.Namespace) -> int:
@@ -333,6 +348,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return handle_benchmark(args)
     elif args.command == "verify-shards":
         return handle_verify_shards(args)
+    elif args.command == "verify-trit":
+        return handle_verify_trit(args)
     elif args.command == "serve":
         return handle_serve(args)
     else:

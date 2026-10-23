@@ -28,6 +28,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import time
 import tracemalloc
 from dataclasses import asdict, dataclass, field
@@ -202,6 +203,31 @@ class ConversionSummary:
         return "\n".join(lines)
 
 
+def get_git_commit_sha() -> str:
+    """Retrieves current git commit SHA, or empty string if unavailable."""
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            cwd=Path(__file__).parent.parent,
+        ).decode("ascii").strip()
+    except Exception:
+        return "unknown"
+
+
+def check_git_dirty() -> bool:
+    """Checks if git working tree has uncommitted changes in tritforge/."""
+    try:
+        status = subprocess.check_output(
+            ["git", "status", "--porcelain", "tritforge/"],
+            stderr=subprocess.DEVNULL,
+            cwd=Path(__file__).parent.parent,
+        ).decode("utf-8").strip()
+        return bool(status)
+    except Exception:
+        return False
+
+
 def file_sha256(filepath: Union[str, Path], chunk_size: int = 4 * 1024 * 1024) -> str:
     """Computes SHA-256 hash of a file on disk."""
     hasher = hashlib.sha256()
@@ -226,8 +252,17 @@ class BatchConverter:
         scales_dtype: str = "float16",
         block_size: int = 128,
         scale_method: str = "ls_optimal",
+        gatekeeper_dtype: str = "bfloat16",
+        quantizer_version: str = "1.1.0",
+        allow_dirty: bool = False,
         model_name: Optional[str] = None,
     ):
+        if not allow_dirty and check_git_dirty():
+            raise RuntimeError(
+                "Refusing to run BatchConverter with uncommitted changes in tritforge/. "
+                "Commit your changes first or pass allow_dirty=True."
+            )
+
         self.input_dir = Path(input_dir)
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -235,25 +270,69 @@ class BatchConverter:
         self.scales_dtype = scales_dtype
         self.block_size = block_size
         self.scale_method = scale_method
+        self.gatekeeper_dtype = gatekeeper_dtype
+        self.quantizer_version = quantizer_version
+        self.allow_dirty = allow_dirty
+        self.git_commit_sha = get_git_commit_sha()
 
         self.index = ShardIndex(self.input_dir)
         self.model_name = model_name or self.index.config.get("model_type", "Qwen3.8-2.4T-A95B-FP8")
         self.manifest_path = self.output_dir / "conversion_manifest.json"
+
+        # Validate against existing container files in output directory (one output folder per experiment arm)
+        self._validate_existing_containers()
+
+    def _validate_existing_containers(self) -> None:
+        """Ensures existing .trit files in output_dir match configured experiment arm."""
+        for p in self.output_dir.glob("layer_*.trit"):
+            try:
+                meta, _ = read_trit_header(p)
+                # Check gatekeeper dtype from raw arrays if present
+                for t_name, t_info in meta.get("tensors", {}).items():
+                    if t_info.get("type") == "raw_array":
+                        existing_gk = t_info.get("dtype")
+                        if existing_gk and existing_gk != self.gatekeeper_dtype:
+                            raise ValueError(
+                                f"Output directory {self.output_dir} contains container {p.name} with gatekeeper dtype '{existing_gk}', "
+                                f"which conflicts with requested '{self.gatekeeper_dtype}'. Use a separate output folder per experiment arm."
+                            )
+                        break
+                    elif t_info.get("type") == "quantized_trit_matrix":
+                        existing_sm = t_info.get("scale_method")
+                        if existing_sm and existing_sm != self.scale_method:
+                            raise ValueError(
+                                f"Output directory {self.output_dir} contains container {p.name} with scale_method '{existing_sm}', "
+                                f"which conflicts with requested '{self.scale_method}'. Use a separate output folder per experiment arm."
+                            )
+                        break
+            except ValueError:
+                raise
+            except Exception:
+                pass
 
     def _read_manifest(self) -> Dict[str, Any]:
         """Reads existing manifest or initializes empty state."""
         if self.manifest_path.exists():
             try:
                 data = json.loads(self.manifest_path.read_text(encoding="utf-8"))
-                # Guard against mismatched parameters on resume (L-6)
-                for key, current_val in [
-                    ("packing_mode", self.packing_mode),
-                    ("scales_dtype", self.scales_dtype),
-                    ("block_size", self.block_size),
-                    ("scale_method", self.scale_method),
-                ]:
+                # Guard against mismatched parameters or missing keys on resume (B2)
+                guarded_keys = {
+                    "packing_mode": self.packing_mode,
+                    "scales_dtype": self.scales_dtype,
+                    "block_size": self.block_size,
+                    "scale_method": self.scale_method,
+                    "gatekeeper_dtype": self.gatekeeper_dtype,
+                    "quantizer_version": self.quantizer_version,
+                }
+                for key, current_val in guarded_keys.items():
                     manifest_val = data.get(key)
-                    if manifest_val is not None and manifest_val != current_val:
+                    if manifest_val is None:
+                        raise ValueError(
+                            f"Manifest configuration mismatch for '{key}': key is missing from existing manifest, "
+                            f"converter configured with {current_val!r}. "
+                            f"Refusing to resume with incompatible settings (B2)."
+                        )
+                    if manifest_val != current_val:
                         raise ValueError(
                             f"Manifest configuration mismatch for '{key}': "
                             f"manifest has {manifest_val!r}, converter configured with {current_val!r}. "
@@ -270,7 +349,11 @@ class BatchConverter:
             "scales_dtype": self.scales_dtype,
             "block_size": self.block_size,
             "scale_method": self.scale_method,
+            "gatekeeper_dtype": self.gatekeeper_dtype,
+            "quantizer_version": self.quantizer_version,
+            "git_commit_sha": self.git_commit_sha,
             "completed_layers": [],
+            "failed_layers": {},
             "layer_files": {},
             "metrics": {},
         }
@@ -314,6 +397,10 @@ class BatchConverter:
             "model_name": self.model_name,
             "num_experts": len(target_experts),
             "expert_indices": target_experts,
+            "scale_method": self.scale_method,
+            "gatekeeper_dtype": self.gatekeeper_dtype,
+            "quantizer_version": self.quantizer_version,
+            "git_commit_sha": self.git_commit_sha,
             "converted_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
 
@@ -325,114 +412,132 @@ class BatchConverter:
             extra_metadata=extra_meta,
         )
 
-        # 1. Extract and Stream Gatekeeper Tensors (Router, Norms, Shared Expert, Attention)
-        total_input_bytes = 0
-
-        for t_name, (shard_path, t_info, dstart) in layer_map.gatekeeper_tensors.items():
-            arr = extract_tensor(shard_path, t_name, header={t_name: t_info}, data_start_offset=dstart)
-            if not np.all(np.isfinite(arr)):
-                raise ValueError(f"Non-finite (NaN or Inf) values detected in gatekeeper tensor '{t_name}'")
-            # Normalize key name for container storage
-            rel_key = t_name.replace(f"model.layers.{layer_idx}.", "")
-            writer.add_raw_array(rel_key, arr)
-            total_input_bytes += arr.nbytes
-            del arr
-            gc.collect()
-
-        # 2. Extract, Quantize, and Stream Routed Experts
-        tracemalloc.start()
-        total_experts_count = len(target_experts)
-
-        for step_idx, e_id in enumerate(target_experts):
-            if e_id not in layer_map.expert_tensors:
-                continue
-
-            projs = layer_map.expert_tensors[e_id]
-            for proj_name in ["gate_proj", "up_proj", "down_proj"]:
-                if proj_name not in projs:
-                    continue
-
-                shard_path, t_info, dstart = projs[proj_name]
-                full_t_name = f"model.layers.{layer_idx}.mlp.experts.{e_id}.{proj_name}.weight"
-                header_subset = {full_t_name: t_info}
-                scale_t_name = f"{full_t_name}_scale_inv"
-                scale_shard_path = shard_path
-                scale_dstart = dstart
-                if e_id in layer_map.scale_tensors and proj_name in layer_map.scale_tensors[e_id]:
-                    scale_shard_path, scale_t_info, scale_dstart = layer_map.scale_tensors[e_id][proj_name]
-                    header_subset[scale_t_name] = scale_t_info
-
-                # If weight and scale reside in different shards, extract scale directly from its shard
-                if scale_shard_path != shard_path and scale_t_name in header_subset:
-                    w_raw = extract_tensor(shard_path, full_t_name, header={full_t_name: t_info}, data_start_offset=dstart)
-                    # If w_raw is already float32 without scaling (or if extract_tensor decoded it)
-                    # For FP8 with cross-shard scale, extract_tensor on weight shard won't find scale_inv.
-                    # slice.extract_tensor now raises ValueError if FP8 and scale_inv is missing.
-                    # So we extract FP8 raw and scale manually across shards:
-                    from tritforge.slice import extract_raw_tensor, decode_fp8_e4m3_to_f32, decode_bf16_to_f32
-                    raw_w_bytes, w_meta = extract_raw_tensor(shard_path, full_t_name, {full_t_name: t_info}, dstart)
-                    raw_s_bytes, s_meta = extract_raw_tensor(scale_shard_path, scale_t_name, {scale_t_name: scale_t_info}, scale_dstart)
-                    w_decoded = decode_fp8_e4m3_to_f32(raw_w_bytes, tuple(w_meta["shape"]))
-                    s_decoded = decode_bf16_to_f32(raw_s_bytes, tuple(s_meta["shape"]))
-                    blk_h = w_meta["shape"][0] // s_meta["shape"][0]
-                    blk_w = w_meta["shape"][1] // s_meta["shape"][1]
-                    s_exp = np.repeat(np.repeat(s_decoded, blk_h, axis=0), blk_w, axis=1)
-                    w = w_decoded * s_exp
-                else:
-                    w = extract_tensor(shard_path, full_t_name,
-                                       header=header_subset, data_start_offset=dstart)
-
-                if not np.all(np.isfinite(w)):
-                    raise ValueError(f"Non-finite (NaN or Inf) values detected in expert tensor '{full_t_name}'")
-
-                total_input_bytes += w.nbytes
-
-                # Quantize: apply Hessian compensation if covariance available, else progressive Absmax (C-3, C-8)
-                cov_entry = empirical_covariances.get(e_id) if empirical_covariances is not None else None
-                # Support either single covariance or per-projection dict {proj_name: H}
-                if isinstance(cov_entry, dict):
-                    cov = cov_entry.get(proj_name)
-                else:
-                    cov = cov_entry if (cov_entry is not None and cov_entry.shape == (w.shape[1], w.shape[1])) else None
-
-                if cov is not None:
-                    qmat, _ = hessian_compensate_quantize(
-                        w,
-                        cov,
-                        block_size=self.block_size,
-                        scale_method="optimal" if self.scale_method == "ls_optimal" else self.scale_method,
-                    )
-                else:
-                    qmat = absmax_ternary_quantize(
-                        w,
-                        scaling_mode="block",
-                        block_size=self.block_size,
-                        scale_method=self.scale_method,
-                    )
-
-                writer.add_quantized_matrix(f"experts.{e_id}.{proj_name}", qmat)
-
-                # Explicit cleanup to guarantee constant-memory bound
-                del w, qmat
-
-            if step_idx % 16 == 0:
+        try:
+    
+            # 1. Extract and Stream Gatekeeper Tensors (Router, Norms, Shared Expert, Attention)
+            total_input_bytes = 0
+    
+            for t_name, (shard_path, t_info, dstart) in layer_map.gatekeeper_tensors.items():
+                arr = extract_tensor(shard_path, t_name, header={t_name: t_info}, data_start_offset=dstart)
+                if not np.all(np.isfinite(arr)):
+                    raise ValueError(f"Non-finite (NaN or Inf) values detected in gatekeeper tensor '{t_name}'")
+                # Normalize key name for container storage
+                rel_key = t_name.replace(f"model.layers.{layer_idx}.", "")
+                writer.add_raw_array(rel_key, arr)
+                total_input_bytes += arr.nbytes
+                del arr
                 gc.collect()
-
-            if progress_callback is not None:
-                current_ram_mb = tracemalloc.get_traced_memory()[0] / (1024 ** 2)
-                progress_callback({
-                    "layer_idx": layer_idx,
-                    "expert_idx": e_id,
-                    "experts_completed": step_idx + 1,
-                    "total_experts": total_experts_count,
-                    "current_ram_mb": current_ram_mb,
-                })
-
-        tracemalloc.stop()
-
-        # 3. Finalize Native .trit Container
-        written_bytes = writer.close()
-        out_sha256 = file_sha256(out_file)
+    
+            # 2. Extract, Quantize, and Stream Routed Experts
+            tracemalloc.start()
+            total_experts_count = len(target_experts)
+    
+            for step_idx, e_id in enumerate(target_experts):
+                if e_id not in layer_map.expert_tensors:
+                    continue
+    
+                projs = layer_map.expert_tensors[e_id]
+                for proj_name in ["gate_proj", "up_proj", "down_proj"]:
+                    if proj_name not in projs:
+                        continue
+    
+                    shard_path, t_info, dstart = projs[proj_name]
+                    full_t_name = f"model.layers.{layer_idx}.mlp.experts.{e_id}.{proj_name}.weight"
+                    header_subset = {full_t_name: t_info}
+                    scale_t_name = f"{full_t_name}_scale_inv"
+                    scale_shard_path = shard_path
+                    scale_dstart = dstart
+                    if e_id in layer_map.scale_tensors and proj_name in layer_map.scale_tensors[e_id]:
+                        scale_shard_path, scale_t_info, scale_dstart = layer_map.scale_tensors[e_id][proj_name]
+                        header_subset[scale_t_name] = scale_t_info
+    
+                    # If weight and scale reside in different shards, extract scale directly from its shard
+                    if scale_shard_path != shard_path and scale_t_name in header_subset:
+                        w_raw = extract_tensor(shard_path, full_t_name, header={full_t_name: t_info}, data_start_offset=dstart)
+                        # If w_raw is already float32 without scaling (or if extract_tensor decoded it)
+                        # For FP8 with cross-shard scale, extract_tensor on weight shard won't find scale_inv.
+                        # slice.extract_tensor now raises ValueError if FP8 and scale_inv is missing.
+                        # So we extract FP8 raw and scale manually across shards:
+                        from tritforge.slice import extract_raw_tensor, decode_fp8_e4m3_to_f32, decode_bf16_to_f32
+                        raw_w_bytes, w_meta = extract_raw_tensor(shard_path, full_t_name, {full_t_name: t_info}, dstart)
+                        raw_s_bytes, s_meta = extract_raw_tensor(scale_shard_path, scale_t_name, {scale_t_name: scale_t_info}, scale_dstart)
+                        w_decoded = decode_fp8_e4m3_to_f32(raw_w_bytes, tuple(w_meta["shape"]))
+                        s_decoded = decode_bf16_to_f32(raw_s_bytes, tuple(s_meta["shape"]))
+                        blk_h = w_meta["shape"][0] // s_meta["shape"][0]
+                        blk_w = w_meta["shape"][1] // s_meta["shape"][1]
+                        s_exp = np.repeat(np.repeat(s_decoded, blk_h, axis=0), blk_w, axis=1)
+                        w = w_decoded * s_exp
+                    else:
+                        w = extract_tensor(shard_path, full_t_name,
+                                           header=header_subset, data_start_offset=dstart)
+    
+                    if not np.all(np.isfinite(w)):
+                        raise ValueError(f"Non-finite (NaN or Inf) values detected in expert tensor '{full_t_name}'")
+    
+                    total_input_bytes += w.nbytes
+    
+                    # Quantize: apply Hessian compensation if covariance available, else progressive Absmax (C-3, C-8)
+                    cov_entry = empirical_covariances.get(e_id) if empirical_covariances is not None else None
+                    # Support either single covariance or per-projection dict {proj_name: H}
+                    if isinstance(cov_entry, dict):
+                        cov = cov_entry.get(proj_name)
+                    else:
+                        cov = cov_entry if (cov_entry is not None and cov_entry.shape == (w.shape[1], w.shape[1])) else None
+    
+                    if cov is not None:
+                        if self.scale_method == "ls_optimal":
+                            raise NotImplementedError(
+                                "Hessian compensation with ls_optimal scale_method is not yet supported (C-4/C-7 pending). "
+                                "Refusing to silently fall back to heuristic."
+                            )
+                        qmat, _ = hessian_compensate_quantize(
+                            w,
+                            cov,
+                            block_size=self.block_size,
+                            scale_method=self.scale_method,
+                        )
+                    else:
+                        qmat = absmax_ternary_quantize(
+                            w,
+                            scaling_mode="block",
+                            block_size=self.block_size,
+                            scale_method=self.scale_method,
+                        )
+    
+                    writer.add_quantized_matrix(f"experts.{e_id}.{proj_name}", qmat)
+    
+                    # Explicit cleanup to guarantee constant-memory bound
+                    del w, qmat
+    
+                if step_idx % 16 == 0:
+                    gc.collect()
+    
+                if progress_callback is not None:
+                    current_ram_mb = tracemalloc.get_traced_memory()[0] / (1024 ** 2)
+                    progress_callback({
+                        "layer_idx": layer_idx,
+                        "expert_idx": e_id,
+                        "experts_completed": step_idx + 1,
+                        "total_experts": total_experts_count,
+                        "current_ram_mb": current_ram_mb,
+                    })
+    
+            tracemalloc.stop()
+    
+            # 3. Finalize Native .trit Container
+            written_bytes = writer.close()
+            out_sha256 = file_sha256(out_file)
+        except Exception:
+            try:
+                writer.close()
+            except Exception:
+                pass
+            if writer.payload_tmp_path.exists():
+                try:
+                    writer.payload_tmp_path.unlink()
+                except Exception:
+                    pass
+            raise
 
         t1 = time.perf_counter()
         duration = t1 - t0
@@ -482,6 +587,14 @@ class BatchConverter:
         for l_pos, l_idx in enumerate(target_layers):
             out_file = self.output_dir / f"layer_{l_idx:02d}.trit"
 
+            # Check if layer previously failed in manifest
+            if resume and str(l_idx) in manifest.get("failed_layers", {}):
+                err_msg = manifest["failed_layers"][str(l_idx)]
+                raise RuntimeError(
+                    f"Layer {l_idx} previously failed with error: {err_msg!r}. "
+                    f"Refusing to retry failed layers automatically (W2-15). Clear failed_layers in manifest to force."
+                )
+
             # Check if layer already converted and can be resumed
             if resume and (l_idx in manifest.get("completed_layers", [])) and out_file.exists():
                 stored_m = manifest.get("metrics", {}).get(str(l_idx))
@@ -505,11 +618,18 @@ class BatchConverter:
                     continue
 
             # Convert layer
-            path, metrics = self.convert_layer(
-                layer_idx=l_idx,
-                expert_indices=expert_indices,
-                progress_callback=progress_callback,
-            )
+            try:
+                path, metrics = self.convert_layer(
+                    layer_idx=l_idx,
+                    expert_indices=expert_indices,
+                    progress_callback=progress_callback,
+                )
+            except Exception as ex:
+                if "failed_layers" not in manifest:
+                    manifest["failed_layers"] = {}
+                manifest["failed_layers"][str(l_idx)] = str(ex)
+                self._save_manifest(manifest)
+                raise
 
             layer_metrics_list.append(metrics)
             total_in += metrics.input_bytes

@@ -200,6 +200,7 @@ def test_converter_hessian_compensation_integration():
             output_dir=out_path,
             packing_mode="base3",
             block_size=16,
+            scale_method="absmax",
         )
 
         # Pass per-projection covariance dict
@@ -321,3 +322,93 @@ def test_converter_manifest_parameter_mismatch_guard_l6():
         c2 = BatchConverter(in_path, out_path, block_size=16, scale_method="absmax")
         with pytest.raises(ValueError, match="Manifest configuration mismatch for 'scale_method'"):
             c2.convert_all(layers=[0], expert_indices=[0], resume=True)
+
+
+def test_converter_manifest_missing_key_rejected_b2():
+    """B2: Resuming against a manifest with missing keys (like baseline without scale_method) must raise ValueError."""
+    with tempfile.TemporaryDirectory() as tmp_in_dir, tempfile.TemporaryDirectory() as tmp_out_dir:
+        in_path = Path(tmp_in_dir)
+        out_path = Path(tmp_out_dir)
+
+        tensors = {
+            "model.layers.0.mlp.experts.0.gate_proj.weight": np.ones((16, 16), dtype=np.float32),
+            "model.layers.0.mlp.experts.0.up_proj.weight": np.ones((16, 16), dtype=np.float32),
+            "model.layers.0.mlp.experts.0.down_proj.weight": np.ones((16, 16), dtype=np.float32),
+        }
+        _create_mock_safetensors(in_path / "model-00001.safetensors", tensors)
+
+        # Write baseline-shaped manifest without scale_method or gatekeeper_dtype
+        legacy_manifest = {
+            "model_name": "test_model",
+            "packing_mode": "base3",
+            "scales_dtype": "float16",
+            "block_size": 16,
+            "completed_layers": [0],
+            "layer_files": {"0": str(out_path / "layer_00.trit")},
+            "metrics": {},
+        }
+        (out_path / "conversion_manifest.json").write_text(json.dumps(legacy_manifest), encoding="utf-8")
+
+        # Creating BatchConverter and trying to resume must fail because scale_method is missing
+        converter = BatchConverter(in_path, out_path, block_size=16)
+        with pytest.raises(ValueError, match="key is missing from existing manifest"):
+            converter.convert_all(layers=[0], expert_indices=[0], resume=True)
+
+
+def test_converter_failed_layer_recorded_and_not_retried_w2_15():
+    """W2-15: Failed layer is recorded in manifest and not retried automatically."""
+    with tempfile.TemporaryDirectory() as tmp_in_dir, tempfile.TemporaryDirectory() as tmp_out_dir:
+        in_path = Path(tmp_in_dir)
+        out_path = Path(tmp_out_dir)
+
+        # Non-finite weight to force conversion failure
+        nan_arr = np.ones((16, 16), dtype=np.float32)
+        nan_arr[0, 0] = np.nan
+        tensors = {
+            "model.layers.0.mlp.experts.0.gate_proj.weight": nan_arr,
+            "model.layers.0.mlp.experts.0.up_proj.weight": np.ones((16, 16), dtype=np.float32),
+            "model.layers.0.mlp.experts.0.down_proj.weight": np.ones((16, 16), dtype=np.float32),
+        }
+        _create_mock_safetensors(in_path / "model-00001.safetensors", tensors)
+
+        converter = BatchConverter(in_path, out_path, block_size=16)
+        with pytest.raises(ValueError, match="Non-finite"):
+            converter.convert_all(layers=[0], expert_indices=[0], resume=True)
+
+        manifest = json.loads((out_path / "conversion_manifest.json").read_text(encoding="utf-8"))
+        assert "0" in manifest["failed_layers"]
+        assert "Non-finite" in manifest["failed_layers"]["0"]
+
+        # Subsequent resume attempt must refuse to retry automatically
+        with pytest.raises(RuntimeError, match="previously failed with error"):
+            converter.convert_all(layers=[0], expert_indices=[0], resume=True)
+
+
+def test_verify_trit_directory_reports_integrity_w2_11():
+    """W2-11 + L-4: verify-trit reports container metadata and checks against manifest."""
+    from tritforge.verifier import verify_trit_directory
+
+    with tempfile.TemporaryDirectory() as tmp_in_dir, tempfile.TemporaryDirectory() as tmp_out_dir:
+        in_path = Path(tmp_in_dir)
+        out_path = Path(tmp_out_dir)
+
+        tensors = {
+            "model.layers.0.mlp.experts.0.gate_proj.weight": np.ones((16, 16), dtype=np.float32),
+            "model.layers.0.mlp.experts.0.up_proj.weight": np.ones((16, 16), dtype=np.float32),
+            "model.layers.0.mlp.experts.0.down_proj.weight": np.ones((16, 16), dtype=np.float32),
+        }
+        _create_mock_safetensors(in_path / "model-00001.safetensors", tensors)
+
+        converter = BatchConverter(in_path, out_path, block_size=16)
+        converter.convert_all(layers=[0], expert_indices=[0], resume=True)
+
+        report = verify_trit_directory(out_path, no_hash=False)
+        assert report.manifest_found is True
+        assert len(report.containers) == 1
+        c = report.containers[0]
+        assert c.layer_idx == 0
+        assert c.scale_method == "ls_optimal"
+        assert c.gatekeeper_dtype == "bfloat16"
+        assert c.sha256_match is True
+        assert c.manifest_size_match is True
+        assert not report.manifest_mismatches

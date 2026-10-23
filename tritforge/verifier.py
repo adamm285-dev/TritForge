@@ -298,3 +298,158 @@ def verify_shard_directory(
         shards=results,
         duration_seconds=duration,
     )
+
+
+@dataclass
+class TritContainerHealth:
+    file_name: str
+    file_path: Path
+    layer_idx: int
+    size_bytes: int
+    scale_method: str
+    gatekeeper_dtype: str
+    num_tensors: int
+    sha256_match: Optional[bool] = None  # None if no hash in manifest, True if match, False if mismatch
+    manifest_size_match: Optional[bool] = None
+    manifest_error: Optional[str] = None
+
+
+@dataclass
+class TritVerificationReport:
+    folder: Path
+    containers: List[TritContainerHealth]
+    manifest_found: bool
+    manifest_mismatches: List[str]
+
+    def render_markdown(self) -> str:
+        lines = [
+            f"# Trit Verification Report: `{self.folder}`",
+            f"- Containers found: {len(self.containers)}",
+            f"- Manifest present: {self.manifest_found}",
+        ]
+        if self.manifest_mismatches:
+            lines.append("## Manifest Discrepancies / Mismatches")
+            for m in self.manifest_mismatches:
+                lines.append(f"- ⚠️ {m}")
+        lines.extend([
+            "",
+            "| File | Layer | Size (MB) | Scale Method | GK Dtype | Tensors | Hash Check | Size Check |",
+            "|---|---|---|---|---|---|---|---|",
+        ])
+        for c in self.containers:
+            mb = c.size_bytes / (1024 ** 2)
+            hash_str = "N/A" if c.sha256_match is None else ("PASS" if c.sha256_match else "FAIL")
+            size_str = "N/A" if c.manifest_size_match is None else ("PASS" if c.manifest_size_match else "FAIL")
+            lines.append(
+                f"| `{c.file_name}` | {c.layer_idx} | {mb:.1f} | {c.scale_method} | {c.gatekeeper_dtype} | {c.num_tensors} | {hash_str} | {size_str} |"
+            )
+        return "\n".join(lines)
+
+
+def verify_trit_directory(
+    directory: Union[str, Path],
+    no_hash: bool = False,
+) -> TritVerificationReport:
+    """
+    Read-only verification of all layer_*.trit files in a directory against conversion_manifest.json (W2-11 + L-4).
+    Reports file sizes, scale_method, gatekeeper dtype, tensor count, and SHA-256 integrity when recorded.
+    """
+    from tritforge.container import read_trit_header
+    from tritforge.converter import file_sha256
+
+    p_dir = Path(directory)
+    manifest_path = p_dir / "conversion_manifest.json"
+    manifest: Dict[str, Any] = {}
+    manifest_found = manifest_path.exists()
+    if manifest_found:
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception:
+            manifest = {}
+
+    manifest_metrics = manifest.get("metrics", {})
+    manifest_layers = set(manifest.get("completed_layers", []))
+    manifest_mismatches: List[str] = []
+
+    containers: List[TritContainerHealth] = []
+    found_layer_indices: set[int] = set()
+
+    trit_files = sorted(list(p_dir.glob("layer_*.trit")))
+    for p in trit_files:
+        try:
+            meta, _ = read_trit_header(p)
+            l_idx = meta.get("layer_idx", -1)
+            found_layer_indices.add(l_idx)
+            tensors = meta.get("tensors", {})
+            num_tensors = len(tensors)
+
+            # Inspect scale_method from quantized matrices
+            scale_method = "unknown"
+            for t_info in tensors.values():
+                if t_info.get("type") == "quantized_trit_matrix":
+                    scale_method = t_info.get("scale_method", "unknown")
+                    break
+
+            # Inspect gatekeeper dtype from container metadata or raw arrays
+            gk_dtype = meta.get("gatekeeper_dtype", "unknown")
+            if gk_dtype == "unknown":
+                for t_info in tensors.values():
+                    if t_info.get("type") == "raw_array":
+                        gk_dtype = t_info.get("dtype", "unknown")
+                        break
+
+            size_bytes = p.stat().st_size
+            sha256_match: Optional[bool] = None
+            size_match: Optional[bool] = None
+            manifest_err: Optional[str] = None
+
+            # Compare with manifest if available
+            stored_m = manifest_metrics.get(str(l_idx))
+            if stored_m:
+                expected_size = stored_m.get("output_bytes")
+                if expected_size is not None:
+                    size_match = (size_bytes == expected_size)
+                    if not size_match:
+                        manifest_mismatches.append(
+                            f"{p.name}: size mismatch (file is {size_bytes} bytes, manifest recorded {expected_size})"
+                        )
+
+                expected_sha = stored_m.get("sha256")
+                if expected_sha and not no_hash:
+                    actual_sha = file_sha256(p)
+                    sha256_match = (actual_sha == expected_sha)
+                    if not sha256_match:
+                        manifest_mismatches.append(
+                            f"{p.name}: SHA-256 hash mismatch (file is {actual_sha}, manifest recorded {expected_sha})"
+                        )
+            elif manifest_found:
+                manifest_mismatches.append(f"{p.name}: layer {l_idx} found on disk but missing from manifest metrics")
+
+            containers.append(
+                TritContainerHealth(
+                    file_name=p.name,
+                    file_path=p,
+                    layer_idx=l_idx,
+                    size_bytes=size_bytes,
+                    scale_method=scale_method,
+                    gatekeeper_dtype=gk_dtype,
+                    num_tensors=num_tensors,
+                    sha256_match=sha256_match,
+                    manifest_size_match=size_match,
+                    manifest_error=manifest_err,
+                )
+            )
+        except Exception as e:
+            manifest_mismatches.append(f"{p.name}: header read error: {e}")
+
+    # Check for layers in manifest but missing on disk
+    for m_l in manifest_layers:
+        if m_l not in found_layer_indices:
+            manifest_mismatches.append(f"Manifest marks layer {m_l} as completed, but file layer_{m_l:02d}.trit is missing from disk")
+
+    return TritVerificationReport(
+        folder=p_dir,
+        containers=containers,
+        manifest_found=manifest_found,
+        manifest_mismatches=manifest_mismatches,
+    )
