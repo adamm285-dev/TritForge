@@ -46,6 +46,7 @@ def test_bf16_decoding():
 
 
 @pytest.mark.skipif(not MASTER_SHARD.exists(), reason="Master weight shard not found on H: drive")
+@pytest.mark.vault
 def test_extract_expert_slice_live():
     """Verify live extraction of expert slice from Qwen 2.4T FP8 shard."""
     slice_obj = extract_expert_slice(

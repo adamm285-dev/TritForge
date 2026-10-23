@@ -52,6 +52,7 @@ def test_evaluate_routing_trace_dynamoe_stability():
 
 
 @pytest.mark.skipif(not Path(r"H:\AI_Memory_Vault\models\Qwen3.8-2.4T-TritForge\layer_00.trit").exists(), reason="Layer 0 container not found on H: drive")
+@pytest.mark.vault
 def test_evaluate_routing_trace_real_layer0_router_w2_6():
     """W2-6: Test router stability on real Layer 0 router from layer_00.trit on zero-centered norm inputs."""
     from tritforge.container import load_trit_tensor

@@ -170,6 +170,7 @@ def test_ls_optimal_quantization_heavy_tail_optimality():
 
 
 @pytest.mark.skipif(not Path(r"H:\AI_Memory_Vault\models\Qwen3.8-2.4T-A95B-FP8").exists(), reason="FP8 source not found on H: drive")
+@pytest.mark.vault
 def test_expert_229_down_proj_ls_optimal_fidelity():
     """C-8: Verify that LS optimal cuts expert 229 down_proj weight relative error < 0.45."""
     from tritforge.converter import ShardIndex

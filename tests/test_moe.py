@@ -193,6 +193,7 @@ def test_collect_empirical_expert_covariances():
 
 
 @pytest.mark.skipif(not (MASTER_DIR / "model-00001-of-00213.safetensors").exists(), reason="Master shard missing")
+@pytest.mark.vault
 def test_live_assemble_layer0_moe():
     """Verify live assembly of Layer 0 MoE for Expert 0 from master shards."""
     moe_layer = assemble_layer0_moe(

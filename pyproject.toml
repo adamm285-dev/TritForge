@@ -29,6 +29,12 @@ cpu = [
 tritforge = "tritforge.cli:main"
 tritforge-benchmark = "tritforge.benchmark:main"
 
+[tool.pytest.ini_options]
+addopts = "-m \"not vault\""
+markers = [
+    "vault: tests that read from or write to the live model vault on H: drive",
+]
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["tritforge*"]

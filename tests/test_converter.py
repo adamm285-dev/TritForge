@@ -169,6 +169,7 @@ def test_batch_converter_checkpoint_and_resume():
         assert mtime_initial == mtime_resumed  # File was not re-written
 
 
+@pytest.mark.vault
 @pytest.mark.skipif(not (DEFAULT_MODEL_DIR / "model-00001-of-00213.safetensors").exists(),
                     reason="Master model shards not found on H: drive")
 def test_live_master_shard_index():
