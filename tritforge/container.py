@@ -222,10 +222,20 @@ class StreamingTritWriter:
         self._payload_file.write(trit_bytes)
         self._payload_file.write(scale_bytes)
 
-    def add_raw_array(self, name: str, arr: np.ndarray) -> None:
-        """Serializes and appends a raw float32 array directly to disk."""
-        arr_f32 = np.asarray(arr, dtype="<f4")
-        raw_bytes = arr_f32.tobytes()
+    def add_raw_array(self, name: str, arr: np.ndarray, dtype: str = "bfloat16") -> None:
+        """Serializes and appends a raw array directly to disk (Q-2: BF16 by default)."""
+        arr_f32 = np.asarray(arr, dtype=np.float32)
+        shape_list = list(arr_f32.shape)
+
+        if dtype == "bfloat16":
+            # Lossless representation of BF16 source parameters, saving ~50% raw bytes vs FP32
+            u32 = arr_f32.view(np.uint32)
+            u16 = (u32 >> 16).astype("<u2")
+            raw_bytes = u16.tobytes()
+            storage_dtype = "bfloat16"
+        else:
+            raw_bytes = arr_f32.astype("<f4").tobytes()
+            storage_dtype = "float32"
 
         start_offset = self.current_offset
         end_offset = start_offset + len(raw_bytes)
@@ -233,8 +243,8 @@ class StreamingTritWriter:
 
         self.metadata["tensors"][name] = {
             "type": "raw_array",
-            "shape": list(arr_f32.shape),
-            "dtype": "float32",
+            "shape": shape_list,
+            "dtype": storage_dtype,
             "offsets": [start_offset, end_offset],
         }
         self._payload_file.write(raw_bytes)
@@ -373,9 +383,14 @@ def load_trit_tensor(
         elif t_type == "raw_array":
             shape = tuple(desc["shape"])
             start, end = desc["offsets"]
+            arr_dtype = desc.get("dtype", "float32")
             f.seek(payload_start_offset + start)
             raw = f.read(end - start)
-            arr = np.frombuffer(raw, dtype="<f4").reshape(shape)
+            if arr_dtype == "bfloat16":
+                u16 = np.frombuffer(raw, dtype="<u2")
+                arr = ((u16.astype(np.uint32) << 16)).view(np.float32).reshape(shape)
+            else:
+                arr = np.frombuffer(raw, dtype="<f4").reshape(shape)
             return arr.copy()
         else:
             raise NotImplementedError(f"Unsupported tensor type: {t_type}")

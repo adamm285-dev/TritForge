@@ -177,3 +177,47 @@ def test_live_master_shard_index():
     assert len(idx.shard_files) > 0
     assert 0 in idx.available_layers
     assert len(idx.get_layer_expert_indices(0)) > 0
+
+
+
+def test_converter_hessian_compensation_integration():
+    """C-3: Verify convert_layer executes successfully with precomputed covariances."""
+    with tempfile.TemporaryDirectory() as tmp_in_dir, tempfile.TemporaryDirectory() as tmp_out_dir:
+        in_path = Path(tmp_in_dir)
+        out_path = Path(tmp_out_dir)
+
+        tensors_shard = {
+            "model.layers.0.mlp.gate.weight": np.random.randn(2, 64).astype(np.float32) * 0.01,
+            "model.layers.0.input_layernorm.weight": np.ones(64, dtype=np.float32),
+            "model.layers.0.mlp.experts.0.gate_proj.weight": np.random.randn(32, 64).astype(np.float32) * 0.02,
+            "model.layers.0.mlp.experts.0.up_proj.weight": np.random.randn(32, 64).astype(np.float32) * 0.02,
+            "model.layers.0.mlp.experts.0.down_proj.weight": np.random.randn(64, 32).astype(np.float32) * 0.02,
+        }
+        _create_mock_safetensors(in_path / "model-00001.safetensors", tensors_shard)
+
+        converter = BatchConverter(
+            input_dir=in_path,
+            output_dir=out_path,
+            packing_mode="base3",
+            block_size=16,
+        )
+
+        # Pass per-projection covariance dict
+        cov_64 = np.eye(64, dtype=np.float32)
+        cov_32 = np.eye(32, dtype=np.float32)
+        empirical_covs = {
+            0: {
+                "gate_proj": cov_64,
+                "up_proj": cov_64,
+                "down_proj": cov_32,
+            }
+        }
+
+        trit_file, metrics = converter.convert_layer(0, expert_indices=[0], empirical_covariances=empirical_covs)
+        assert trit_file.exists()
+        assert metrics.num_experts == 1
+
+        loaded = load_trit_layer(trit_file, expert_idx=0)
+        assert loaded.expert_idx == 0
+        assert loaded.gate_proj.original_shape == (32, 64)
+        assert loaded.down_proj.original_shape == (64, 32)

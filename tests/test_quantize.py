@@ -1,3 +1,4 @@
+from pathlib import Path
 """
 Tests for tritforge.quantize
 ============================
@@ -116,3 +117,59 @@ def test_bit_packing_base3_roundtrip():
 
     unpacked = unpack_trits_base3(packed, shape)
     assert np.array_equal(trits, unpacked), "Base-3 packing roundtrip failed"
+
+
+
+def test_ls_optimal_quantization_heavy_tail_optimality():
+    """C-8 / Q-1: Verify that closed-form least-squares optimal ternary matches brute-force k."""
+    bs = 128
+    rng = np.random.RandomState(42)
+    # Heavy-tailed Student-t distribution (df=2)
+    w = rng.standard_t(df=2, size=bs).astype(np.float32)
+
+    # 1. Closed-form via absmax_ternary_quantize with scale_method='ls_optimal'
+    W_2d = w.reshape(1, bs)
+    q_opt = absmax_ternary_quantize(W_2d, scaling_mode="block", scale_method="ls_optimal", block_size=bs)
+    w_rec = q_opt.reconstruct().ravel()
+    err_closed = float(np.sum((w - w_rec) ** 2))
+
+    # 2. Brute-force over all possible k in 1..bs
+    a = np.abs(w)
+    s = -np.sort(-a)
+    best_bf_err = float("inf")
+    for k in range(1, bs + 1):
+        thr = s[k - 1]
+        t = np.where(a >= thr, np.sign(w), 0).astype(np.float32)
+        n_nz = np.sum(t != 0)
+        alpha = float(np.sum(w * t) / n_nz) if n_nz > 0 else 0.0
+        err = float(np.sum((w - alpha * t) ** 2))
+        if err < best_bf_err:
+            best_bf_err = err
+
+    # Assert closed-form matches optimal brute force within numerical precision (FP16 scale tolerance)
+    assert np.isclose(err_closed, best_bf_err, rtol=1e-3, atol=1e-4)
+
+
+@pytest.mark.skipif(not Path(r"H:\AI_Memory_Vault\models\Qwen3.8-2.4T-A95B-FP8").exists(), reason="FP8 source not found on H: drive")
+def test_expert_229_down_proj_ls_optimal_fidelity():
+    """C-8: Verify that LS optimal cuts expert 229 down_proj weight relative error < 0.45."""
+    from tritforge.converter import ShardIndex
+    from tritforge.slice import extract_tensor, read_safetensors_header
+
+    src_dir = Path(r"H:\AI_Memory_Vault\models\Qwen3.8-2.4T-A95B-FP8")
+    idx = ShardIndex(src_dir)
+    t_name = "model.layers.0.mlp.experts.229.down_proj.weight"
+    s, info, d = idx.tensor_to_shard[t_name]
+    h, _ = read_safetensors_header(s)
+    scale_name = f"{t_name}_scale_inv"
+    h_sub = {t_name: h[t_name]}
+    if scale_name in idx.tensor_to_shard:
+        h_sub[scale_name] = idx.tensor_to_shard[scale_name][1]
+
+    w = extract_tensor(s, t_name, header=h_sub, data_start_offset=d)
+
+    q_ls = absmax_ternary_quantize(w, scaling_mode="block", scale_method="ls_optimal", block_size=128)
+    w_ls = q_ls.reconstruct()
+    rel_err = float(np.linalg.norm(w - w_ls) / np.linalg.norm(w))
+
+    assert rel_err < 0.45, f"Expected relative error < 0.45, got {rel_err:.4f}"

@@ -211,7 +211,7 @@ class BatchConverter:
         packing_mode: str = "base3",
         scales_dtype: str = "float16",
         block_size: int = 128,
-        scale_method: str = "optimal",
+        scale_method: str = "ls_optimal",
         model_name: Optional[str] = None,
     ):
         self.input_dir = Path(input_dir)
@@ -330,15 +330,20 @@ class BatchConverter:
                                    header=header_subset, data_start_offset=dstart)
                 total_input_bytes += w.nbytes
 
-                # Quantize: apply Hessian compensation if covariance available, else progressive Absmax
-                cov = empirical_covariances.get(e_id) if empirical_covariances is not None else None
+                # Quantize: apply Hessian compensation if covariance available, else progressive Absmax (C-3, C-8)
+                cov_entry = empirical_covariances.get(e_id) if empirical_covariances is not None else None
+                # Support either single covariance or per-projection dict {proj_name: H}
+                if isinstance(cov_entry, dict):
+                    cov = cov_entry.get(proj_name)
+                else:
+                    cov = cov_entry if (cov_entry is not None and cov_entry.shape == (w.shape[1], w.shape[1])) else None
+
                 if cov is not None:
-                    qmat = hessian_compensate_quantize(
+                    qmat, _ = hessian_compensate_quantize(
                         w,
                         cov,
-                        scaling_mode="block",
                         block_size=self.block_size,
-                        scale_method=self.scale_method,
+                        scale_method="optimal" if self.scale_method == "ls_optimal" else self.scale_method,
                     )
                 else:
                     qmat = absmax_ternary_quantize(

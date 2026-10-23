@@ -19,7 +19,7 @@ from typing import Dict, Literal, Optional, Tuple, Union
 import numpy as np
 
 
-ScaleMethod = Literal["absmax", "mean_abs", "optimal"]
+ScaleMethod = Literal["absmax", "mean_abs", "optimal", "ls_optimal"]
 ScalingMode = Literal["channel", "block", "tensor"]
 
 
@@ -38,11 +38,13 @@ class QuantizedTritMatrix:
     method: str = "absmax_naive"
 
     def __post_init__(self):
-        # Invariant check: trits must strictly be in {-1, 0, 1}
-        unique_vals = np.unique(self.trits)
-        invalid = [v for v in unique_vals if v not in (-1, 0, 1)]
-        if invalid:
-            raise ValueError(f"Quantized trits violate ternary invariant: found invalid values {invalid}")
+        # Invariant check (L-8): trits must strictly be in {-1, 0, 1}
+        # Uses min()/max() check instead of costly np.unique on millions of elements
+        if self.trits.size > 0:
+            t_min = int(self.trits.min())
+            t_max = int(self.trits.max())
+            if t_min < -1 or t_max > 1:
+                raise ValueError(f"Quantized trits violate ternary invariant: min={t_min}, max={t_max}")
 
     @property
     def density(self) -> float:
@@ -142,23 +144,38 @@ def absmax_ternary_quantize(
         scales = scale
 
     elif scaling_mode == "block":
-        n_blocks = int(np.ceil(n / block_size))
-        scales = np.zeros((m, n_blocks), dtype=np.float32)
-        trits = np.zeros((m, n), dtype=np.int8)
+        if scale_method == "ls_optimal" and (n % block_size == 0):
+            # C-8 / Q-1: Closed-form Least-Squares optimal ternary quantization per block
+            # Vectorized across rows and blocks without calibration
+            bs = block_size
+            blocks = W.reshape(m, n // bs, bs)
+            a = np.abs(blocks)
+            s = -np.sort(-a, axis=2)
+            c = np.cumsum(s, axis=2)
+            ks = np.arange(1, bs + 1, dtype=np.float32)
+            k = np.argmax(c * c / ks, axis=2) + 1  # (m, n // bs)
+            thr = np.take_along_axis(s, (k - 1)[..., None], 2)  # (m, n // bs, 1)
+            alpha = (np.take_along_axis(c, (k - 1)[..., None], 2) / k[..., None]).astype(np.float16).astype(np.float32)
+            trits = np.where(a >= thr, np.sign(blocks), 0).astype(np.int8).reshape(m, n)
+            scales = alpha.reshape(m, n // bs)
+        else:
+            n_blocks = int(np.ceil(n / block_size))
+            scales = np.zeros((m, n_blocks), dtype=np.float32)
+            trits = np.zeros((m, n), dtype=np.int8)
 
-        for b_idx in range(n_blocks):
-            col_start = b_idx * block_size
-            col_end = min(col_start + block_size, n)
-            w_b = W[:, col_start:col_end]
-            scale_b = _compute_scale(w_b, scale_method, axis=1, keepdims=True)
-            scales[:, b_idx : b_idx + 1] = scale_b
+            for b_idx in range(n_blocks):
+                col_start = b_idx * block_size
+                col_end = min(col_start + block_size, n)
+                w_b = W[:, col_start:col_end]
+                scale_b = _compute_scale(w_b, scale_method if scale_method != "ls_optimal" else "optimal", axis=1, keepdims=True)
+                scales[:, b_idx : b_idx + 1] = scale_b
 
-            scaled_b = w_b / scale_b
-            trits[:, col_start:col_end] = np.where(
-                scaled_b > threshold_ratio,
-                1,
-                np.where(scaled_b < -threshold_ratio, -1, 0)
-            ).astype(np.int8)
+                scaled_b = w_b / scale_b
+                trits[:, col_start:col_end] = np.where(
+                    scaled_b > threshold_ratio,
+                    1,
+                    np.where(scaled_b < -threshold_ratio, -1, 0)
+                ).astype(np.int8)
     else:
         raise ValueError(f"Unknown scaling mode: {scaling_mode}")
 
