@@ -78,3 +78,28 @@ def test_read_safetensors_header_oversized(tmp_path):
 
     with pytest.raises(ValueError, match="Unsafe or corrupted safetensors header size"):
         read_safetensors_header(fake_shard)
+
+
+def test_inplace_4d_block_scale_dequant_b6():
+    """B6: Verify that 4D in-place block-scale broadcast matches np.repeat on non-square grid."""
+    # Test tensor: 256 x 384 with 2 x 3 scale grid (block size 128 x 128)
+    shape = (256, 384)
+    s_shape = (2, 3)
+    blk_h = shape[0] // s_shape[0]  # 128
+    blk_w = shape[1] // s_shape[1]  # 128
+
+    rng = np.random.RandomState(42)
+    w_orig = rng.randn(*shape).astype(np.float32)
+    s_f32 = rng.uniform(0.1, 2.0, size=s_shape).astype(np.float32)
+
+    # 1. Reference: np.repeat method
+    s_expanded = np.repeat(np.repeat(s_f32, blk_h, axis=0), blk_w, axis=1)
+    w_expected = w_orig * s_expanded
+
+    # 2. In-place 4D method (as implemented in slice.py)
+    w_test = w_orig.copy()
+    s_rows, s_cols = s_shape
+    w_4d = w_test.reshape(s_rows, blk_h, s_cols, blk_w)
+    w_4d *= s_f32[:, None, :, None]
+
+    np.testing.assert_allclose(w_test, w_expected, rtol=1e-7, atol=1e-7)

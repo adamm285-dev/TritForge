@@ -245,12 +245,12 @@ def extract_expert_slice(
     else:
         raise NotImplementedError(f"Unsupported scale dtype: {s_dtype}")
 
-    # Expand 128x128 block scales to match weight shape
+    # In-place zero-allocation 4D strided block scale broadcast
     blk_h, blk_w = block_size
-    s_expanded = np.repeat(np.repeat(s_f32, blk_h, axis=0), blk_w, axis=1)
-
-    # Dequantize master weight: W_dequant = W_fp8 * scale_inv
-    w_dequant = w_f32 * s_expanded
+    s_rows, s_cols = s_shape
+    w_4d = w_f32.reshape(s_rows, blk_h, s_cols, blk_w)
+    w_4d *= s_f32[:, None, :, None]
+    w_dequant = w_f32
 
     t1 = time.perf_counter()
     load_time_ms = (t1 - t0) * 1000.0
@@ -308,10 +308,11 @@ def extract_tensor(
         if scale_name in header:
             scale_raw, s_info = extract_raw_tensor(file_path, scale_name, header, data_start_offset)
             scale_f32 = decode_bf16_to_f32(scale_raw, tuple(s_info["shape"]))
-            blk_h = shape[0] // s_info["shape"][0]
-            blk_w = shape[1] // s_info["shape"][1]
-            scale_exp = np.repeat(np.repeat(scale_f32, blk_h, axis=0), blk_w, axis=1)
-            val = val * scale_exp
+            s_rows, s_cols = s_info["shape"]
+            blk_h = shape[0] // s_rows
+            blk_w = shape[1] // s_cols
+            val_4d = val.reshape(s_rows, blk_h, s_cols, blk_w)
+            val_4d *= scale_f32[:, None, :, None]
         else:
             raise ValueError(f"FP8 tensor '{tensor_name}' requires '{scale_name}' but none found in shard header")
         return val
