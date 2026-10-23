@@ -4,7 +4,9 @@ Tests for tritforge.slice
 Validates binary header parsing, seek-based slice extraction, and pure NumPy FP8/BF16 decoding.
 """
 
+import json
 from pathlib import Path
+import struct
 import numpy as np
 import pytest
 
@@ -103,3 +105,61 @@ def test_inplace_4d_block_scale_dequant_b6():
     w_4d *= s_f32[:, None, :, None]
 
     np.testing.assert_allclose(w_test, w_expected, rtol=1e-7, atol=1e-7)
+
+
+def test_extract_tensor_fp8_e4m3_dequant_with_non_square_scale_grid_d7(tmp_path):
+    """D7: extract_tensor dequantizes F8_E4M3 weight with BF16 weight_scale_inv on a non-square grid.
+    Fails if scale multiplication is omitted or broadcast axes are swapped."""
+    from tritforge.slice import extract_tensor
+
+    w_shape = (256, 384)
+    s_shape = (2, 3)
+
+    rng = np.random.RandomState(42)
+    # Exclude NaN bytes 127 (0x7F) and 255 (0xFF)
+    valid_bytes = np.array([b for b in range(256) if b not in (127, 255)], dtype=np.uint8)
+    raw_w_u8 = rng.choice(valid_bytes, size=w_shape)
+    w_unscaled = FP8_E4M3_LUT[raw_w_u8]
+
+    # BF16 scales on 2x3 block grid (blocks 128x128)
+    s_f32 = rng.uniform(0.5, 2.5, size=s_shape).astype(np.float32)
+    s_bf16_u16 = (s_f32.view(np.uint32) >> 16).astype(np.uint16)
+    s_f32_decoded = decode_bf16_to_f32(s_bf16_u16.tobytes(), shape=s_shape)
+
+    # Reference ground truth using np.repeat
+    s_expanded = np.repeat(np.repeat(s_f32_decoded, 128, axis=0), 128, axis=1)
+    expected = w_unscaled * s_expanded
+
+    # Write synthetic .safetensors shard
+    shard_path = tmp_path / "synthetic_fp8_shard.safetensors"
+    w_bytes = raw_w_u8.tobytes()
+    s_bytes = s_bf16_u16.tobytes()
+
+    header = {
+        "model.layers.0.mlp.experts.0.gate_proj.weight": {
+            "dtype": "F8_E4M3",
+            "shape": list(w_shape),
+            "data_offsets": [0, len(w_bytes)],
+        },
+        "model.layers.0.mlp.experts.0.gate_proj.weight_scale_inv": {
+            "dtype": "BF16",
+            "shape": list(s_shape),
+            "data_offsets": [len(w_bytes), len(w_bytes) + len(s_bytes)],
+        },
+    }
+    h_bytes = json.dumps(header).encode("utf-8")
+    with open(shard_path, "wb") as f:
+        f.write(struct.pack("<Q", len(h_bytes)))
+        f.write(h_bytes)
+        f.write(w_bytes)
+        f.write(s_bytes)
+
+    extracted = extract_tensor(shard_path, "model.layers.0.mlp.experts.0.gate_proj.weight")
+
+    # Verification: must match expected exactly
+    assert extracted.shape == w_shape
+    np.testing.assert_allclose(extracted, expected, rtol=1e-5, atol=1e-5)
+
+    # Verify that unscaled weights do NOT match (fails if scale multiplication is omitted)
+    assert not np.allclose(extracted, w_unscaled)
+
