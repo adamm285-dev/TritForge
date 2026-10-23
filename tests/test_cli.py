@@ -1,8 +1,9 @@
 """
-Tests for tritforge.cli (Phase 5)
-=================================
+Tests for tritforge.cli (Phase 5 & Wave 1 Review Fixes)
+======================================================
 Validates argument parsing, subcommand dispatch, range parsing, audit outputs,
-conversion CLI execution, and streaming inference execution.
+conversion CLI execution, failure of 'run' for unimplemented architectures,
+and explicit 'demo' execution.
 """
 
 from io import StringIO
@@ -76,11 +77,20 @@ def test_cli_audit_command(capsys):
     assert data["memory_reduction_vs_fp8_pct"] >= 75.0
 
 
-def test_cli_run_command(capsys):
-    """Verify 'tritforge run' executes prompt generation."""
-    code = main(["run", "--prompt", "Hello TritForge", "--max-new-tokens", "5", "--temperature", "0.0"])
+def test_cli_run_command_fails(capsys):
+    """I-4: Verify 'tritforge run' exits non-zero with not implemented message."""
+    code = main(["run", "--prompt", "Hello TritForge"])
+    assert code != 0
+    captured = capsys.readouterr()
+    assert "Inference not implemented for qwen3_5_moe yet (I-4)" in captured.err
+
+
+def test_cli_demo_command(capsys):
+    """I-4: Verify 'tritforge demo' runs toy demo model explicitly labeled as random."""
+    code = main(["demo", "--prompt", "Hello TritForge", "--max-new-tokens", "5", "--temperature", "0.0"])
     assert code == 0
     captured = capsys.readouterr()
+    assert "random toy model" in captured.out
     assert "Generated 5 tokens" in captured.out
     assert "Output Sequence Token IDs" in captured.out
 

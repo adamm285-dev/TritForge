@@ -110,11 +110,20 @@ def handle_convert(args: argparse.Namespace) -> int:
 
 
 def handle_run(args: argparse.Namespace) -> int:
-    """Handles 'tritforge run' subcommand."""
-    model_dir = Path(args.model_dir) if args.model_dir else None
+    """Handles 'tritforge run' subcommand. Fails non-zero until real engine exists (I-4)."""
+    sys.stderr.write(
+        "ERROR: Inference not implemented for qwen3_5_moe yet (I-4).\n"
+        "The model architecture contains Gated DeltaNet attention and zero-centered RMSNorm.\n"
+        "To run a toy in-memory demonstration with random weights, use: tritforge demo\n"
+    )
+    return 1
 
+
+def handle_demo(args: argparse.Namespace) -> int:
+    """Handles 'tritforge demo' subcommand: explicitly labeled random toy model demo (M-002, I-4)."""
+    # MOCK(M-002): Demonstrates execution mechanics with a tiny randomly-initialized toy model
     print("=" * 70)
-    print(" TritForge Streaming MoE Inference Engine")
+    print(" TritForge Toy Model Demonstration (DEMO ONLY: random toy model)")
     print("=" * 70)
 
     prompt = args.prompt or "What is Asymmetric Mixed-Precision?"
@@ -124,15 +133,7 @@ def handle_run(args: argparse.Namespace) -> int:
     print(f" Top-P:        {args.top_p}")
     print("-" * 70)
 
-    # In streaming or demo mode, if model_dir has converted layers, load them;
-    # otherwise instantiate a verified in-memory execution pipeline.
-    if model_dir and model_dir.exists() and list(model_dir.glob("layer_*.trit")):
-        trit_files = sorted(list(model_dir.glob("layer_*.trit")))
-        print(f" Discovered {len(trit_files)} .trit layer containers at {model_dir}")
-        first_layer = load_trit_layer(trit_files[0])
-        print(f" >> Loaded Layer 0: {len(first_layer.experts)} experts active in container")
-
-    # Run inference demonstration
+    # Run inference demonstration on random toy model
     model = create_dummy_asymmetric_model(
         vocab_size=1000,
         hidden_size=128,
@@ -160,8 +161,8 @@ def handle_run(args: argparse.Namespace) -> int:
     )
     t1 = time.perf_counter()
 
-    print(f" Generated {len(result.generated_tokens[0])} tokens in {(t1 - t0)*1000.0:.2f} ms "
-          f"({result.tokens_per_second:.1f} tok/s)")
+    print(f" [DEMO] Generated {len(result.generated_tokens[0])} tokens in {(t1 - t0)*1000.0:.2f} ms "
+          f"({result.tokens_per_second:.1f} tok/s) using random toy model")
     print(f" Output Sequence Token IDs: {result.sequences[0].tolist()}")
     return 0
 
@@ -259,6 +260,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--top-k", type=int, default=50,
                        help="Top-k filtering threshold (default: 50)")
 
+    # 2b. demo
+    p_demo = subparsers.add_parser("demo", help="Run toy model demonstration (random toy model demo only)")
+    p_demo.add_argument("--prompt", type=str, default="What is Asymmetric Mixed-Precision?",
+                        help="Text prompt for generation")
+    p_demo.add_argument("--max-new-tokens", type=int, default=15,
+                        help="Maximum new tokens to generate (default: 15)")
+    p_demo.add_argument("--temperature", type=float, default=0.0,
+                        help="Sampling temperature (0.0 for deterministic greedy decoding)")
+    p_demo.add_argument("--top-p", type=float, default=1.0,
+                        help="Nucleus top-p probability threshold (default: 1.0)")
+    p_demo.add_argument("--top-k", type=int, default=50,
+                        help="Top-k filtering threshold (default: 50)")
+
     # 3. audit
     p_audit = subparsers.add_parser("audit", help="Audit model footprint, memory savings, and Spark node requirements")
     p_audit.add_argument("--model", type=str, default="qwen-2.4t",
@@ -311,6 +325,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return handle_convert(args)
     elif args.command == "run":
         return handle_run(args)
+    elif args.command == "demo":
+        return handle_demo(args)
     elif args.command == "audit":
         return handle_audit(args)
     elif args.command == "benchmark":
