@@ -412,3 +412,68 @@ def test_verify_trit_directory_reports_integrity_w2_11():
         assert c.sha256_match is True
         assert c.manifest_size_match is True
         assert not report.manifest_mismatches
+
+
+def test_converter_cross_shard_fp8_scale_resolution_l1():
+    """L-1: Two-shard fixture where weight is in shard 1 and weight_scale_inv is in shard 2.
+    Asserts dequantized weight equals expected product, and fails if scale is sought in shard 1."""
+    with tempfile.TemporaryDirectory() as tmp_in_dir, tempfile.TemporaryDirectory() as tmp_out_dir:
+        in_path = Path(tmp_in_dir)
+        out_path = Path(tmp_out_dir)
+
+        # 256x256 FP8 weight in shard 1 (2x2 scale grid, block_size 128)
+        shape = (256, 256)
+        s_shape = (2, 2)
+        raw_fp8 = np.full(shape, 32, dtype=np.uint8)  # constant uint8 code
+        # In E4M3, byte 32 (0x20): s=0, e=4, m=0 -> 2^(4-7)*(1+0) = 2^(-3) = 0.125
+        w_f32_decoded = np.full(shape, 0.125, dtype=np.float32)
+
+        # BF16 scales in shard 2
+        # Say scale = 2.0. BF16 representation for 2.0 is 0x4000
+        scale_bf16 = np.full(s_shape, 0x4000, dtype=np.uint16)
+        scale_f32 = np.full(s_shape, 2.0, dtype=np.float32)
+        expected_w = w_f32_decoded * 2.0
+
+        t_name = "model.layers.0.mlp.experts.0.gate_proj.weight"
+        scale_name = f"{t_name}_scale_inv"
+
+        # Shard 1: Gatekeeper + expert weight only (NO scale_inv in shard 1)
+        h1 = {
+            "model.layers.0.mlp.gate.weight": {
+                "dtype": "F32", "shape": [1, 256], "data_offsets": [0, 1 * 256 * 4]
+            },
+            t_name: {
+                "dtype": "F8_E4M3", "shape": list(shape), "data_offsets": [1024, 1024 + raw_fp8.nbytes]
+            }
+        }
+        h1_bytes = json.dumps(h1).encode("utf-8")
+        with open(in_path / "model-00001-of-00002.safetensors", "wb") as f:
+            f.write(struct.pack("<Q", len(h1_bytes)))
+            f.write(h1_bytes)
+            f.write(np.zeros((1, 256), dtype=np.float32).tobytes())
+            f.write(raw_fp8.tobytes())
+
+        # Shard 2: Scale inv tensor only
+        h2 = {
+            scale_name: {
+                "dtype": "BF16", "shape": list(s_shape), "data_offsets": [0, scale_bf16.nbytes]
+            }
+        }
+        h2_bytes = json.dumps(h2).encode("utf-8")
+        with open(in_path / "model-00002-of-00002.safetensors", "wb") as f:
+            f.write(struct.pack("<Q", len(h2_bytes)))
+            f.write(h2_bytes)
+            f.write(scale_bf16.tobytes())
+
+        # Build converter and convert
+        converter = BatchConverter(in_path, out_path, block_size=128, scale_method="ls_optimal")
+        trit_path, metrics = converter.convert_layer(0, expert_indices=[0])
+        assert trit_path.exists()
+
+        # Load quantized matrix and check scale/weights
+        from tritforge.container import load_trit_layer
+        loaded = load_trit_layer(trit_path, expert_idx=0, proj="gate_proj")
+        # Reconstruction: Q * scales should approximate expected_w (which is constant 0.25)
+        # ls_optimal ternary on constant 0.25 will produce trits +1 and scale 0.25
+        recon = loaded.reconstruct()
+        np.testing.assert_allclose(recon, expected_w, rtol=1e-3, atol=1e-3)
