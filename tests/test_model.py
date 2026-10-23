@@ -327,3 +327,66 @@ def test_streaming_moe_cache_does_not_evict_active_batch_experts():
 
         # Reconstructed outputs must match in-memory ground truth without dropped experts
         np.testing.assert_allclose(y_stream, y_full, rtol=1e-4, atol=1e-5)
+
+
+def test_streaming_moe_zero_centered_rmsnorm_runtime_c1():
+    """C-1 runtime test: verify StreamingMoELayer with zero-centered norm matches reference and fails if reverted to standard norm."""
+    dim = 64
+    n_exp = 32
+    k = 4
+    rng = np.random.RandomState(42)
+    x = rng.randn(2, dim).astype(np.float32)
+    w_norm = (rng.randn(dim) * 0.1).astype(np.float32)
+    gate_w = rng.randn(n_exp, dim).astype(np.float32)
+    router = MoERouter(gate_w, num_experts=n_exp, num_experts_per_tok=k)
+
+    # 1. Independent reference top-k computation using x_hat * (1 + w)
+    var = np.mean(x ** 2, axis=-1, keepdims=True)
+    x_norm_ref = (x / np.sqrt(var + 1e-6)) * (1.0 + w_norm)
+    logits_ref = np.dot(x_norm_ref, gate_w.T)
+    expected_top_k = np.argsort(-logits_ref, axis=-1)[:, :k]
+
+    # Standard (non-zero centered) top-k to prove separation
+    x_norm_bad = (x / np.sqrt(var + 1e-6)) * w_norm
+    logits_bad = np.dot(x_norm_bad, gate_w.T)
+    bad_top_k = np.argsort(-logits_bad, axis=-1)[:, :k]
+    assert not np.array_equal(expected_top_k, bad_top_k), "Test requires top-k to differ between conventions"
+
+    # 2. Test against transformers Qwen3_5MoeRMSNorm if available
+    try:
+        import torch
+        from transformers.models.qwen3_5_moe.modeling_qwen3_5_moe import Qwen3_5MoeRMSNorm
+        ref_layer = Qwen3_5MoeRMSNorm(dim=dim, eps=1e-6)
+        ref_layer.weight.data = torch.from_numpy(w_norm).float()
+        with torch.no_grad():
+            x_norm_hf = ref_layer(torch.from_numpy(x).float()).numpy()
+        np.testing.assert_allclose(x_norm_ref, x_norm_hf, rtol=1e-5, atol=1e-6)
+    except ImportError:
+        pass
+
+    # 3. Create dummy expert to avoid forward pass error
+    q_dummy = absmax_ternary_quantize(rng.randn(16, dim).astype(np.float32), block_size=16)
+    q_down = absmax_ternary_quantize(rng.randn(dim, 16).astype(np.float32), block_size=16)
+    experts = {e: TernaryExpert(e, q_dummy, q_dummy, q_down) for e in range(n_exp)}
+
+    layer = StreamingMoELayer(
+        router=router,
+        experts=experts,
+        norm_weight=w_norm,
+        num_experts=n_exp,
+        num_experts_per_tok=k,
+    )
+
+    # 4. Execute forward pass
+    out, metrics = layer.forward(x, residual=False, collect_metrics=True)
+    assert metrics.total_tokens == 2
+    assert metrics.top_k == k
+
+    # Active experts in DispatchMetrics must match the expected top-k set exactly
+    expected_active_experts = set(expected_top_k.flatten())
+    actual_active_experts = set(metrics.expert_token_counts.keys())
+    assert actual_active_experts == expected_active_experts
+
+    # And must NOT match the wrong (standard norm) expert set
+    bad_active_experts = set(bad_top_k.flatten())
+    assert actual_active_experts != bad_active_experts
