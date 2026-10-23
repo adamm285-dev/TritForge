@@ -312,6 +312,8 @@ def extract_tensor(
             blk_w = shape[1] // s_info["shape"][1]
             scale_exp = np.repeat(np.repeat(scale_f32, blk_h, axis=0), blk_w, axis=1)
             val = val * scale_exp
+        else:
+            raise ValueError(f"FP8 tensor '{tensor_name}' requires '{scale_name}' but none found in shard header")
         return val
     elif dtype in ("I32", "int32"):
         return np.frombuffer(raw_bytes, dtype="<i4").reshape(shape)

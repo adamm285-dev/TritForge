@@ -24,6 +24,7 @@ Enforces:
 from __future__ import annotations
 
 import gc
+import hashlib
 import json
 import os
 import re
@@ -159,6 +160,7 @@ class LayerConversionMetrics:
     compression_ratio_pct: float
     duration_s: float
     output_file: str
+    sha256: str = ""
 
 
 @dataclass
@@ -200,6 +202,18 @@ class ConversionSummary:
         return "\n".join(lines)
 
 
+def file_sha256(filepath: Union[str, Path], chunk_size: int = 4 * 1024 * 1024) -> str:
+    """Computes SHA-256 hash of a file on disk."""
+    hasher = hashlib.sha256()
+    with open(filepath, "rb") as f:
+        while True:
+            chunk = f.read(chunk_size)
+            if not chunk:
+                break
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
 class BatchConverter:
     """
     Streaming, memory-bounded batch converter from multi-shard Safetensors to .trit format.
@@ -230,7 +244,24 @@ class BatchConverter:
         """Reads existing manifest or initializes empty state."""
         if self.manifest_path.exists():
             try:
-                return json.loads(self.manifest_path.read_text(encoding="utf-8"))
+                data = json.loads(self.manifest_path.read_text(encoding="utf-8"))
+                # Guard against mismatched parameters on resume (L-6)
+                for key, current_val in [
+                    ("packing_mode", self.packing_mode),
+                    ("scales_dtype", self.scales_dtype),
+                    ("block_size", self.block_size),
+                    ("scale_method", self.scale_method),
+                ]:
+                    manifest_val = data.get(key)
+                    if manifest_val is not None and manifest_val != current_val:
+                        raise ValueError(
+                            f"Manifest configuration mismatch for '{key}': "
+                            f"manifest has {manifest_val!r}, converter configured with {current_val!r}. "
+                            f"Refusing to resume with incompatible settings."
+                        )
+                return data
+            except ValueError:
+                raise
             except Exception:
                 pass
         return {
@@ -238,6 +269,7 @@ class BatchConverter:
             "packing_mode": self.packing_mode,
             "scales_dtype": self.scales_dtype,
             "block_size": self.block_size,
+            "scale_method": self.scale_method,
             "completed_layers": [],
             "layer_files": {},
             "metrics": {},
@@ -298,6 +330,8 @@ class BatchConverter:
 
         for t_name, (shard_path, t_info, dstart) in layer_map.gatekeeper_tensors.items():
             arr = extract_tensor(shard_path, t_name, header={t_name: t_info}, data_start_offset=dstart)
+            if not np.all(np.isfinite(arr)):
+                raise ValueError(f"Non-finite (NaN or Inf) values detected in gatekeeper tensor '{t_name}'")
             # Normalize key name for container storage
             rel_key = t_name.replace(f"model.layers.{layer_idx}.", "")
             writer.add_raw_array(rel_key, arr)
@@ -322,12 +356,35 @@ class BatchConverter:
                 full_t_name = f"model.layers.{layer_idx}.mlp.experts.{e_id}.{proj_name}.weight"
                 header_subset = {full_t_name: t_info}
                 scale_t_name = f"{full_t_name}_scale_inv"
+                scale_shard_path = shard_path
+                scale_dstart = dstart
                 if e_id in layer_map.scale_tensors and proj_name in layer_map.scale_tensors[e_id]:
-                    _, scale_t_info, _ = layer_map.scale_tensors[e_id][proj_name]
+                    scale_shard_path, scale_t_info, scale_dstart = layer_map.scale_tensors[e_id][proj_name]
                     header_subset[scale_t_name] = scale_t_info
 
-                w = extract_tensor(shard_path, full_t_name,
-                                   header=header_subset, data_start_offset=dstart)
+                # If weight and scale reside in different shards, extract scale directly from its shard
+                if scale_shard_path != shard_path and scale_t_name in header_subset:
+                    w_raw = extract_tensor(shard_path, full_t_name, header={full_t_name: t_info}, data_start_offset=dstart)
+                    # If w_raw is already float32 without scaling (or if extract_tensor decoded it)
+                    # For FP8 with cross-shard scale, extract_tensor on weight shard won't find scale_inv.
+                    # slice.extract_tensor now raises ValueError if FP8 and scale_inv is missing.
+                    # So we extract FP8 raw and scale manually across shards:
+                    from tritforge.slice import extract_raw_tensor, decode_fp8_e4m3_to_f32, decode_bf16_to_f32
+                    raw_w_bytes, w_meta = extract_raw_tensor(shard_path, full_t_name, {full_t_name: t_info}, dstart)
+                    raw_s_bytes, s_meta = extract_raw_tensor(scale_shard_path, scale_t_name, {scale_t_name: scale_t_info}, scale_dstart)
+                    w_decoded = decode_fp8_e4m3_to_f32(raw_w_bytes, tuple(w_meta["shape"]))
+                    s_decoded = decode_bf16_to_f32(raw_s_bytes, tuple(s_meta["shape"]))
+                    blk_h = w_meta["shape"][0] // s_meta["shape"][0]
+                    blk_w = w_meta["shape"][1] // s_meta["shape"][1]
+                    s_exp = np.repeat(np.repeat(s_decoded, blk_h, axis=0), blk_w, axis=1)
+                    w = w_decoded * s_exp
+                else:
+                    w = extract_tensor(shard_path, full_t_name,
+                                       header=header_subset, data_start_offset=dstart)
+
+                if not np.all(np.isfinite(w)):
+                    raise ValueError(f"Non-finite (NaN or Inf) values detected in expert tensor '{full_t_name}'")
+
                 total_input_bytes += w.nbytes
 
                 # Quantize: apply Hessian compensation if covariance available, else progressive Absmax (C-3, C-8)
@@ -375,6 +432,7 @@ class BatchConverter:
 
         # 3. Finalize Native .trit Container
         written_bytes = writer.close()
+        out_sha256 = file_sha256(out_file)
 
         t1 = time.perf_counter()
         duration = t1 - t0
@@ -388,6 +446,7 @@ class BatchConverter:
             compression_ratio_pct=comp_ratio,
             duration_s=duration,
             output_file=str(out_file),
+            sha256=out_sha256,
         )
         return out_file, metrics
 
@@ -428,6 +487,17 @@ class BatchConverter:
                 stored_m = manifest.get("metrics", {}).get(str(l_idx))
                 if stored_m:
                     m = LayerConversionMetrics(**stored_m)
+                    # Verify file integrity on resume (L-4)
+                    if m.sha256:
+                        actual_hash = file_sha256(out_file)
+                        if actual_hash != m.sha256:
+                            raise ValueError(
+                                f"Corrupted layer file '{out_file}': expected SHA-256 {m.sha256}, got {actual_hash}"
+                            )
+                    elif out_file.stat().st_size != m.output_bytes:
+                        raise ValueError(
+                            f"Size mismatch for layer file '{out_file}': expected {m.output_bytes} bytes, got {out_file.stat().st_size}"
+                        )
                     layer_metrics_list.append(m)
                     total_in += m.input_bytes
                     total_out += m.output_bytes

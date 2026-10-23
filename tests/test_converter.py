@@ -221,3 +221,103 @@ def test_converter_hessian_compensation_integration():
         assert loaded.expert_idx == 0
         assert loaded.gate_proj.original_shape == (32, 64)
         assert loaded.down_proj.original_shape == (64, 32)
+
+
+def test_converter_fp8_missing_scale_raises_l1():
+    """L-1: FP8 tensor without scale_inv must raise ValueError."""
+    with tempfile.TemporaryDirectory() as tmp_in_dir, tempfile.TemporaryDirectory() as tmp_out_dir:
+        in_path = Path(tmp_in_dir)
+        out_path = Path(tmp_out_dir)
+
+        # Create raw FP8 tensor without matching _scale_inv
+        raw_fp8 = np.ones((16, 16), dtype=np.uint8)
+        header = {
+            "model.layers.0.mlp.experts.0.gate_proj.weight": {
+                "dtype": "F8_E4M3",
+                "shape": [16, 16],
+                "data_offsets": [0, raw_fp8.nbytes],
+            }
+        }
+        h_bytes = json.dumps(header).encode("utf-8")
+        with open(in_path / "model-00001.safetensors", "wb") as f:
+            f.write(struct.pack("<Q", len(h_bytes)))
+            f.write(h_bytes)
+            f.write(raw_fp8.tobytes())
+
+        converter = BatchConverter(in_path, out_path, block_size=16)
+        with pytest.raises(ValueError, match="requires.*scale_inv"):
+            converter.convert_layer(0, expert_indices=[0])
+
+
+def test_converter_nan_guard_l3():
+    """L-3: Non-finite (NaN or Inf) weights must raise ValueError."""
+    with tempfile.TemporaryDirectory() as tmp_in_dir, tempfile.TemporaryDirectory() as tmp_out_dir:
+        in_path = Path(tmp_in_dir)
+        out_path = Path(tmp_out_dir)
+
+        nan_arr = np.ones((16, 16), dtype=np.float32)
+        nan_arr[0, 0] = np.nan
+        tensors = {
+            "model.layers.0.mlp.experts.0.gate_proj.weight": nan_arr,
+            "model.layers.0.mlp.experts.0.up_proj.weight": np.ones((16, 16), dtype=np.float32),
+            "model.layers.0.mlp.experts.0.down_proj.weight": np.ones((16, 16), dtype=np.float32),
+        }
+        _create_mock_safetensors(in_path / "model-00001.safetensors", tensors)
+
+        converter = BatchConverter(in_path, out_path, block_size=16)
+        with pytest.raises(ValueError, match="Non-finite.*detected"):
+            converter.convert_layer(0, expert_indices=[0])
+
+
+def test_converter_manifest_sha256_and_tamper_detection_l4():
+    """L-4: Manifest records SHA-256 and detects corrupted/tampered files on resume."""
+    with tempfile.TemporaryDirectory() as tmp_in_dir, tempfile.TemporaryDirectory() as tmp_out_dir:
+        in_path = Path(tmp_in_dir)
+        out_path = Path(tmp_out_dir)
+
+        tensors = {
+            "model.layers.0.mlp.experts.0.gate_proj.weight": np.ones((16, 16), dtype=np.float32),
+            "model.layers.0.mlp.experts.0.up_proj.weight": np.ones((16, 16), dtype=np.float32),
+            "model.layers.0.mlp.experts.0.down_proj.weight": np.ones((16, 16), dtype=np.float32),
+        }
+        _create_mock_safetensors(in_path / "model-00001.safetensors", tensors)
+
+        converter = BatchConverter(in_path, out_path, block_size=16)
+        converter.convert_all(layers=[0], expert_indices=[0], resume=True)
+
+        manifest = converter._read_manifest()
+        assert "0" in manifest["metrics"]
+        sha = manifest["metrics"]["0"]["sha256"]
+        assert len(sha) == 64
+
+        # Tamper with output file
+        out_file = out_path / "layer_00.trit"
+        with open(out_file, "r+b") as f:
+            f.seek(10)
+            f.write(b"\xFF\xFF")
+
+        # Resume should catch corruption and raise ValueError
+        with pytest.raises(ValueError, match="Corrupted layer file"):
+            converter.convert_all(layers=[0], expert_indices=[0], resume=True)
+
+
+def test_converter_manifest_parameter_mismatch_guard_l6():
+    """L-6: Resuming with mismatched conversion parameters must raise ValueError."""
+    with tempfile.TemporaryDirectory() as tmp_in_dir, tempfile.TemporaryDirectory() as tmp_out_dir:
+        in_path = Path(tmp_in_dir)
+        out_path = Path(tmp_out_dir)
+
+        tensors = {
+            "model.layers.0.mlp.experts.0.gate_proj.weight": np.ones((16, 16), dtype=np.float32),
+            "model.layers.0.mlp.experts.0.up_proj.weight": np.ones((16, 16), dtype=np.float32),
+            "model.layers.0.mlp.experts.0.down_proj.weight": np.ones((16, 16), dtype=np.float32),
+        }
+        _create_mock_safetensors(in_path / "model-00001.safetensors", tensors)
+
+        c1 = BatchConverter(in_path, out_path, block_size=16, scale_method="ls_optimal")
+        c1.convert_all(layers=[0], expert_indices=[0], resume=True)
+
+        # Attempt to resume with different scale_method
+        c2 = BatchConverter(in_path, out_path, block_size=16, scale_method="absmax")
+        with pytest.raises(ValueError, match="Manifest configuration mismatch for 'scale_method'"):
+            c2.convert_all(layers=[0], expert_indices=[0], resume=True)
