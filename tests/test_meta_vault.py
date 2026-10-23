@@ -89,14 +89,40 @@ def test_meta_all_vault_referencing_tests_marked():
 
 
 def test_meta_pyproject_toml_deselects_vault_by_default():
-    """Part F (d): Meta-test that fails if pyproject.toml's addopts no longer deselects vault tests."""
+    """Part F (d & c-2): Meta-test that fails if pyproject.toml's addopts no longer deselects vault tests.
+    Parses and evaluates the pytest marker expression to mathematically ensure vault tests are deselected."""
+    import shlex
+    import tomllib
+    from _pytest.mark.expression import Expression
+
     pyproject_path = Path(__file__).resolve().parent.parent / "pyproject.toml"
     assert pyproject_path.exists(), f"pyproject.toml not found at {pyproject_path}"
 
-    content = pyproject_path.read_text(encoding="utf-8")
-    assert "addopts" in content, "pyproject.toml missing addopts"
-    assert 'not vault' in content, (
-        "pyproject.toml addopts does not deselect vault tests (-m \"not vault\"). "
-        "Vault tests must remain deselected by default while H: is defragmented."
+    config = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+    addopts_str = config.get("tool", {}).get("pytest", {}).get("ini_options", {}).get("addopts", "")
+    assert addopts_str, "pyproject.toml missing tool.pytest.ini_options.addopts"
+
+    # Parse CLI flags from addopts
+    tokens = shlex.split(addopts_str)
+    marker_expr_str = None
+    for i, token in enumerate(tokens):
+        if token == "-m" and i + 1 < len(tokens):
+            marker_expr_str = tokens[i + 1]
+            break
+        elif token.startswith("-m"):
+            marker_expr_str = token[2:]
+            break
+
+    assert marker_expr_str is not None, (
+        f"pyproject.toml addopts '{addopts_str}' does not specify a -m marker expression filter."
+    )
+
+    # Evaluate the expression with a matcher that has the 'vault' marker
+    expr = Expression.compile(marker_expr_str)
+    is_vault_selected = expr.evaluate(lambda m: m == "vault")
+
+    assert not is_vault_selected, (
+        f"pyproject.toml marker expression '{marker_expr_str}' evaluates to True for 'vault'! "
+        f"It MUST deselect vault tests (evaluates to False) while H: is being defragmented."
     )
 
