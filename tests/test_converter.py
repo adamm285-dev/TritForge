@@ -578,30 +578,32 @@ def test_failed_conversion_preserves_previous_good_container_e1(tmp_path):
 
 
 def test_verified_done_layers_criteria_e2(tmp_path):
-    """E2: Tests verified_done_layers on:
+    """E2 / Part F: Tests verified_done_layers on:
       a) header-valid container not in completed_layers: not done
       b) in completed_layers and in failed_layers: not done
       c) size mismatch: not done
       d) sha256 mismatch (same size, one byte changed): not done
-      e) fully consistent layer: done (positive control)."""
+      e) fully consistent layer: done (positive control)
+      f) completed layer with matching size but no sha256 in manifest: not done."""
     from tritforge.overnight import verified_done_layers
     from tritforge.container import StreamingTritWriter
     from tritforge.converter import file_sha256
 
-    # Create 5 test containers using StreamingTritWriter
+    # Create 6 test containers using StreamingTritWriter
     # layer 0: valid, will be fully consistent (e)
     # layer 1: valid, will NOT be in completed_layers (a)
     # layer 2: valid, will be in completed_layers AND failed_layers (b)
     # layer 3: valid, will have size mismatch (c)
     # layer 4: valid, will have SHA-256 mismatch (d)
-    for l_idx in range(5):
+    # layer 5: valid, in completed_layers with matching size, but NO sha256 in manifest (f)
+    for l_idx in range(6):
         w = StreamingTritWriter(tmp_path / f"layer_0{l_idx}.trit", layer_idx=l_idx)
         w.add_raw_array("data", np.ones((8, 8), dtype=np.float32) * (l_idx + 1))
         w.close()
 
     # Precompute hashes and sizes
-    sizes = {l_idx: (tmp_path / f"layer_0{l_idx}.trit").stat().st_size for l_idx in range(5)}
-    shas = {l_idx: file_sha256(tmp_path / f"layer_0{l_idx}.trit") for l_idx in range(5)}
+    sizes = {l_idx: (tmp_path / f"layer_0{l_idx}.trit").stat().st_size for l_idx in range(6)}
+    shas = {l_idx: file_sha256(tmp_path / f"layer_0{l_idx}.trit") for l_idx in range(6)}
 
     # Modify layer 4 on disk by altering one byte in place to create SHA-256 mismatch with same size
     with open(tmp_path / "layer_04.trit", "r+b") as f:
@@ -616,7 +618,7 @@ def test_verified_done_layers_criteria_e2(tmp_path):
 
     # Build manifest
     manifest_data = {
-        "completed_layers": [0, 2, 3, 4],  # layer 1 omitted (case a)
+        "completed_layers": [0, 2, 3, 4, 5],  # layer 1 omitted (case a)
         "failed_layers": {"2": "Synthetic failure"},  # layer 2 failed (case b)
         "metrics": {
             "0": {"output_bytes": sizes[0], "sha256": shas[0]},  # case e: fully consistent
@@ -624,12 +626,14 @@ def test_verified_done_layers_criteria_e2(tmp_path):
             "2": {"output_bytes": sizes[2], "sha256": shas[2]},  # case b: in failed_layers
             "3": {"output_bytes": sizes[3] + 128, "sha256": shas[3]},  # case c: size mismatch
             "4": {"output_bytes": sizes[4], "sha256": shas[4]},  # case d: sha mismatch
+            "5": {"output_bytes": sizes[5]},  # case f: matching size, but NO sha256 recorded
         },
     }
     (tmp_path / "conversion_manifest.json").write_text(json.dumps(manifest_data), encoding="utf-8")
 
     done = verified_done_layers(tmp_path)
     assert done == {0}, f"Expected only layer 0 to be verified done, got {done}"
+
 
 
 
