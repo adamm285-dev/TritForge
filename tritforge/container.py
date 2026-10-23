@@ -282,7 +282,9 @@ class StreamingTritWriter:
         return self.file_path.stat().st_size
 
     def abort(self) -> None:
-        """Aborts container writing on failure without finalizing or creating destination file (D1)."""
+        """Aborts container writing on failure without finalizing or creating destination file (D1, E1).
+        Cleans up only temporary artifacts (.payload.tmp and .atomic_tmp) created by this writer.
+        Never unlinks self.file_path, preserving any previous successful container (E1)."""
         try:
             if hasattr(self, "_payload_file") and self._payload_file and not self._payload_file.closed:
                 self._payload_file.close()
@@ -299,12 +301,6 @@ class StreamingTritWriter:
         if tmp_target.exists():
             try:
                 tmp_target.unlink()
-            except Exception:
-                pass
-
-        if self.file_path.exists():
-            try:
-                self.file_path.unlink()
             except Exception:
                 pass
 

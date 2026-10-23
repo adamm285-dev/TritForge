@@ -517,6 +517,66 @@ def test_failed_conversion_leaves_no_layer_file_or_tmp_d1():
         assert not atomic_tmp.exists(), f"atomic_tmp should not exist after failure: {atomic_tmp}"
 
 
+def test_failed_conversion_preserves_previous_good_container_e1(tmp_path):
+    """E1: StreamingTritWriter.abort() must not delete the previous good container.
+    1. Convert layer 0 in temp folder, record SHA-256 of layer_00.trit.
+    2. Rewrite source with NaN in expert 1 down_proj.
+    3. Converting layer 0 again raises.
+    4. layer_00.trit still exists with same SHA-256, no .payload.tmp or .atomic_tmp remains.
+    5. Manifest records layer 0 in failed_layers and verified_done_layers doesn't count it as done."""
+    from tritforge.overnight import verified_done_layers
+    from tritforge.converter import file_sha256
+
+    in_path = tmp_path / "in"
+    out_path = tmp_path / "out"
+    in_path.mkdir()
+    out_path.mkdir()
+
+    # Step 1: Successful conversion of layer 0 with experts 0 and 1
+    tensors_good = {
+        "model.layers.0.mlp.experts.0.gate_proj.weight": np.ones((16, 16), dtype=np.float32),
+        "model.layers.0.mlp.experts.0.up_proj.weight": np.ones((16, 16), dtype=np.float32),
+        "model.layers.0.mlp.experts.0.down_proj.weight": np.ones((16, 16), dtype=np.float32),
+        "model.layers.0.mlp.experts.1.gate_proj.weight": np.ones((16, 16), dtype=np.float32),
+        "model.layers.0.mlp.experts.1.up_proj.weight": np.ones((16, 16), dtype=np.float32),
+        "model.layers.0.mlp.experts.1.down_proj.weight": np.ones((16, 16), dtype=np.float32),
+    }
+    _create_mock_safetensors(in_path / "model-00001.safetensors", tensors_good)
+
+    converter = BatchConverter(in_path, out_path, block_size=16)
+    converter.convert_all(layers=[0], expert_indices=[0, 1], resume=False)
+
+    layer_file = out_path / "layer_00.trit"
+    assert layer_file.exists()
+    good_sha = file_sha256(layer_file)
+    assert verified_done_layers(out_path) == {0}
+
+    # Step 2: Corrupt source by rewriting with NaN in expert 1 down_proj
+    tensors_corrupt = dict(tensors_good)
+    tensors_corrupt["model.layers.0.mlp.experts.1.down_proj.weight"] = np.full((16, 16), np.nan, dtype=np.float32)
+    _create_mock_safetensors(in_path / "model-00001.safetensors", tensors_corrupt)
+
+    # Step 3: Re-converting layer 0 raises
+    c2 = BatchConverter(in_path, out_path, block_size=16)
+    with pytest.raises(ValueError, match="Non-finite.*values detected"):
+        c2.convert_all(layers=[0], expert_indices=[0, 1], resume=False)
+
+    # Step 4: layer_00.trit still exists with same SHA-256, no tmp files left
+    assert layer_file.exists(), "Previous good layer_00.trit was deleted by abort()!"
+    assert file_sha256(layer_file) == good_sha, "layer_00.trit was modified or corrupted!"
+
+    payload_tmp = out_path / "layer_00.payload.tmp"
+    atomic_tmp = out_path / "layer_00.trit.atomic_tmp"
+    assert not payload_tmp.exists()
+    assert not atomic_tmp.exists()
+
+    # Step 5: Manifest recorded failure and verified_done_layers rejects it
+    manifest = json.loads((out_path / "conversion_manifest.json").read_text(encoding="utf-8"))
+    assert "0" in manifest["failed_layers"]
+    assert verified_done_layers(out_path) == set()
+
+
+
 def test_verified_done_layers_criteria_e2(tmp_path):
     """E2: Tests verified_done_layers on:
       a) header-valid container not in completed_layers: not done
