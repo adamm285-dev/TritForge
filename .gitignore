@@ -79,11 +79,18 @@ scratch/
 *.log
 
 # ==============================================================================
-# SDCS Private Framework & Governance (Internal / Protected)
+# SDCS Private Framework, Memory & Governance (Internal / Protected)
 # ==============================================================================
 .sdcs/
+.agents/
+.claude/
+.gemini/
 sessions/
+memory/
 AGENTS.md
+CLAUDE.md
+GEMINI.md
+MEMORY.md
 spine.md
 wiring.yaml
 roadmap.md
@@ -92,3 +99,8 @@ app_map.md
 decisions.md
 evals.md
 mocks.md
+tritslack_spec.md
+ADVERSARIAL_REVIEW*.md
+SDCS-BENCH*.md
+PREREGISTRATION*.md
+dummy_out/
