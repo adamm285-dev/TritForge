@@ -1,6 +1,10 @@
 # TritForge ⚡
 
 <p align="center">
+  <img src="assets/slides/slide_01.png" alt="The Anatomy of a Negative Result: Failing to compress Qwen3.5-MoE to 1.58-bits is the most valuable data we've published" width="100%"/>
+</p>
+
+<p align="center">
   <b>Empirical Study & Clean-Room Toolkit for 1.58-Bit Ternary Post-Training Quantization (PTQ) on Sparse MoE Models</b>
 </p>
 
@@ -15,11 +19,19 @@
 
 ## 🧪 Executive Summary & Empirical Verdict (Negative Result)
 
+<p align="center">
+  <img src="assets/slides/slide_02.png" alt="Engineering a Clean-Room Toolkit for Exact Empirical Measurement" width="100%"/>
+</p>
+
 **TritForge** was built to test a straightforward hypothesis on massive sparse Mixture-of-Experts (MoE) models (`Qwen3.5-MoE` / `Qwen3.8-2.4T-A95B-FP8` and its architectural twin `Qwen3.6-35B-A3B-FP8`):
 
 > **Hypothesis:** Because routed feed-forward experts comprise $>95\%$ of total parameters in ultra-sparse MoEs, can we preserve all **Gatekeeper** weights (Attention, Gated-DeltaNet linear attention, MoE routers, shared experts, RMSNorms, embeddings, and LM head) in high precision while applying **calibration-free 1.58-bit Base-3 ternary PTQ** ($\{-1, 0, +1\}$ with per-128 FP16 block scales, `1.725 bits/weight`) to the routed experts—achieving a **~72.3% physical disk reduction** while retaining $\ge 90\%$ next-token fidelity?
 
 ### The Empirical Answer: **No.**
+
+<p align="center">
+  <img src="assets/slides/slide_05.png" alt="The Hard Truth: 1.58-bit Ternary Breaks at the MoE Boundary (91.7% 4-bit RTN vs 70.5% 1.58-bit Ternary)" width="100%"/>
+</p>
 
 When evaluated end-to-end across all 40 layers of the **`Qwen/Qwen3.6-35B-A3B-FP8`** architectural twin on unseen text ($4 \times 512$ tokens, $N = 2,044$ target predictions, reproduced bit-for-bit on both CPU and GPU in [`experiments/twin_eval/`](experiments/twin_eval/)), **calibration-free ternary PTQ on routed experts fails to meet the $\ge 90\%$ retention threshold**, even after replacing standard threshold heuristics with exact closed-form per-block least-squares optimization (`ls_optimal`) or preserving the top 10% outlier matrices in 4-bit.
 
@@ -31,8 +43,13 @@ We are publishing the full quantization toolkit, `.trit` binary container implem
 
 ## 📊 End-to-End Benchmark Results (`Qwen3.6-35B-A3B-FP8` Twin)
 
+<p align="center">
+  <img src="assets/slides/slide_04.png" alt="Proving the Math with a Bit-Exact Twin Benchmark (CPU Reference = GPU Target)" width="100%"/>
+</p>
+
 **Evaluation Setup ([`experiments/twin_eval/`](experiments/twin_eval/)):**
-* **Control Model:** `Qwen/Qwen3.6-35B-A3B-FP8` (Hybrid Qwen3.5-MoE: 40 layers, 3:1 Gated-DeltaNet to GQA attention ratio, 256 routed experts per layer, top-8 active per token), dequantized exactly per $128 \times 128$ FP8 block in `float32` (`TF32` disabled).
+* **Control Model:** `Qwen/Qwen3.6-35B-A3B-FP8` (Hybrid Qwen3.5-MoE: 40 layers, 3:1 Gated-DeltaNet to GQA attention ratio, 256 routed experts per layer, top-8 active per token), dequantized exactly per $128 \times 128$ FP8 block in IEEE `float32` (`TF32` disabled on CUDA).
+* **Bit-Exact CPU/GPU Verification:** `gpu_quant_check.py` confirms `0` mismatches across `859,832,320` weights between CPU and GPU quantizers, and `gpu_vs_cpu.py` confirms `0.00e+00` relative difference across all evaluation metrics.
 * **Corpus:** 4 sequences $\times$ 512 tokens ($2,048$ tokens total, $2,044$ evaluated targets) of unseen technical prose and code written after the model's training cutoff, locked via [`SHA256SUMS.txt`](experiments/twin_eval/SHA256SUMS.txt).
 * **Asymmetric Boundary:** In every arm below, all non-routed parameters (attention, linear attention, router gates, shared experts, norms, embeddings, LM head) are identical to Control; **only the routed expert projections (`gate_proj`, `up_proj`, `down_proj`) are quantized.**
 
@@ -54,6 +71,11 @@ We are publishing the full quantization toolkit, `.trit` binary container implem
 ## 🔍 Why Calibration-Free Ternary PTQ Failed & Key Technical Findings
 
 ### 1. Heavy-Tailed `down_proj` Outliers Erase ~10% of Routed Experts Under Heuristic Thresholds
+
+<p align="center">
+  <img src="assets/slides/slide_03.png" alt="Solving the Qwen3.5-MoE Runtime Traps: Heavy-tailed down_proj outliers and closed-form ls_optimal scaling" width="100%"/>
+</p>
+
 In a census of 368 randomly sampled routed experts across all 92 layers of the 2.4T FP8 source model, most projections have benign weight distributions (median relative Frobenius error `0.443` under heuristic scaling vs. `0.434` under exact optimization). However, **~10% of routed experts exhibit extreme outlier kurtosis ($>20$) in `down_proj`**, causing standard ternary threshold heuristics to suffer **`0.89–0.98` relative reconstruction error**—effectively zeroing out the expert's contribution.
 
 Replacing heuristic scaling with the exact 1D closed-form least-squares block optimizer (`ls_optimal` in [`tritforge/quantize.py`](tritforge/quantize.py), which evaluates the cumulative prefix sums of sorted $|w|$ per 128-element block) reduces median reconstruction error on kurtosis $>20$ experts from **`0.93` down to `0.38`** and brings every sampled expert below `0.60`. End-to-end, `ls_optimal` (`arm2`) cuts the perplexity penalty from `1.406x` (`arm1`) to `1.324x`, **but 1.58-bit ternary still loses too much precision across 40+ stacked MoE layers (`70.5%` top-1 agreement, `0.459` nats KL).**
@@ -62,6 +84,11 @@ Replacing heuristic scaling with the exact 1D closed-form least-squares block op
 To test whether a small mixed-precision budget could rescue ternary PTQ, `mix_kurt` and `mix_err` keep the worst 10% of expert matrices in each layer (ranked by kurtosis or ternary squared error) in 4-bit (`int4` g128) while leaving the remaining 90% in `ls_optimal` ternary (`1.965 bits/weight` overall). While this lowers the perplexity ratio to **`1.196x–1.216x`** and raises top-1 agreement to **`74.2%–74.4%`**, it confirms that ternary quantization error is not confined to a small outlier subset—it accumulates across the bulk of the 3-state expert projections.
 
 ### 3. Lossless Discovery: 24% Layer-Averaged Structured Dead-Neuron Sparsity in Source FP8 Weights
+
+<p align="center">
+  <img src="assets/slides/slide_06.png" alt="The Unintended Discovery: Inspecting the Zero Scales — 24% lossless dead-neuron sparsity across the pretrained model" width="100%"/>
+</p>
+
 During verification of `.trit` block scale rows against the raw FP8 master shards, we found that 38%–56% of block scales in early layers were legitimately zero. Inspecting the source FP8 tensors revealed **structured dead intermediate neurons**: entire SwiGLU channels where row $i$ of `gate_proj`, row $i$ of `up_proj`, and column $i$ of `down_proj` are simultaneously zero (or $\le 1.3 \times 10^{-6}$):
 * **Layer-Averaged Dead-Neuron Fraction (all 92 layers):** **24%** of all routed-expert intermediate channels.
 * **Early Layers (Layers 0–9):** **54% average** (up to **84%** in Layer 1, and 75%–90% in individual experts).
@@ -75,6 +102,10 @@ During verification of `.trit` block scale rows against the raw FP8 master shard
 ---
 
 ## 🧰 What Works in This Repository
+
+<p align="center">
+  <img src="assets/slides/slide_07.png" alt="The Engineering Artifact: Open-Sourcing Base-3 Packing (.trit container)" width="100%"/>
+</p>
 
 While calibration-free ternary PTQ fell short of our quality target, the engineering infrastructure in this repository is clean-room, dependency-light (core requires only Python $\ge 3.10$ + `numpy`), and tested (`114 passed` offline unit tests):
 
@@ -133,6 +164,14 @@ pytest tests -v
 ```
 
 To reproduce the `Qwen3.6-35B-A3B-FP8` twin evaluation on GPU or CPU, see [`experiments/twin_eval/README.md`](experiments/twin_eval/README.md).
+
+---
+
+## 🧭 Why We Publish Negative Results
+
+<p align="center">
+  <img src="assets/slides/slide_08.png" alt="The Funnel of Rigor: The 70.5% ternary limit is a high-resolution guardrail" width="100%"/>
+</p>
 
 ---
 
