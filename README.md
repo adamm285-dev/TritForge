@@ -13,7 +13,10 @@
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.10%2B-brightgreen.svg" alt="Python Version"></a>
   <a href="#"><img src="https://img.shields.io/badge/Core-Pure%20NumPy-orange.svg" alt="Pure NumPy"></a>
   <a href="experiments/twin_eval/"><img src="https://img.shields.io/badge/Empirical%20Result-Negative%20(70.5%25%20Top--1)-informational.svg" alt="Empirical Result"></a>
+  <a href="assets/audio/TritForge_Audio_Overview.m4a"><img src="https://img.shields.io/badge/🎧%20Audio%20Deep--Dive-Listen%20(4:24)-purple.svg" alt="Audio Deep Dive"></a>
 </p>
+
+> 🎧 **Audio Post-Mortem Deep Dive (4:24):** [**Listen to / Download the TritForge Engineering Audio Overview (`TritForge_Audio_Overview.m4a`)**](assets/audio/TritForge_Audio_Overview.m4a) — covering the `70.5%` 1.58-bit ternary ceiling vs. `91.7%` 4-bit RTN on `Qwen3.5-MoE`, closed-form `ls_optimal` outlier scaling, the Base-3 `.trit` container, and the `24%` lossless dead-neuron sparsity discovery.
 
 ---
 
